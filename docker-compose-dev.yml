@@ -5,7 +5,7 @@ services:
   auth:
     build: ./services/auth
     ports:
-      - '8001:8001'
+      - "8001:8001"
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
       JWT_SECRET: ${JWT_SECRET}
@@ -22,19 +22,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   mail:
     build: ./services/mail
     ports:
-      - '8002:8002'
+      - "8002:8002"
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
       MAILHOG_HOST: mailhog
       MAILHOG_PORT: 1025
+    restart: unless-stopped
     depends_on:
+      db:
+        condition: service_healthy
       mailhog:
         condition: service_healthy
-    restart: unless-stopped
     networks:
       - backend
     healthcheck:
@@ -42,14 +45,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   messaging:
     build: ./services/messaging
     ports:
-      - '8003:8003'
+      - "8003:8003"
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - backend
     healthcheck:
@@ -57,16 +64,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   files:
     build: ./services/files
     ports:
-      - '8004:8004'
+      - "8004:8004"
     volumes:
-      - './uploads:/app/uploads'
+      - ./uploads:/app/uploads
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - backend
     healthcheck:
@@ -74,15 +85,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   siem:
     build: ./services/siem
     ports:
-      - '8005:8005'
-      - '8006:8006'
+      - "8005:8005"
+      - "8006:8006"
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - backend
     healthcheck:
@@ -90,20 +105,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   frontend:
     build: ./frontend
     ports:
-      - '3000:3000'
+      - "3000:3000"
     restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_healthy
+      mail:
+        condition: service_healthy
+      messaging:
+        condition: service_healthy
+      files:
+        condition: service_healthy
+      siem:
+        condition: service_healthy
     networks:
       - backend
 
   mailhog:
     image: mailhog/mailhog:latest
     ports:
-      - '1025:1025'
-      - '8025:8025'
+      - "1025:1025"
+      - "8025:8025"
     restart: unless-stopped
     networks:
       - backend
@@ -112,30 +139,31 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   db:
-    image: postgres:15
+    image: postgres:18
     environment:
       POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_USER: postgres
       POSTGRES_DB: secp
     ports:
-      - '5432:5432'
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql  
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d secp"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
 volumes:
   pgdata:
-    driver: local
 
 networks:
   backend:

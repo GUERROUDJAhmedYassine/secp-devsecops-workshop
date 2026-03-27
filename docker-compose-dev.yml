@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
 
   auth:
@@ -18,7 +16,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8001/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +39,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8002/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,7 +58,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8003/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -81,7 +79,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8004/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -101,7 +99,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8005/health" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -135,7 +133,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8025"]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8025" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -147,6 +145,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_USER: postgres
       POSTGRES_DB: secp
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
     volumes:
@@ -156,7 +155,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d secp"]
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "secp"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -164,6 +163,7 @@ services:
 
 volumes:
   pgdata:
+
 
 networks:
   backend:

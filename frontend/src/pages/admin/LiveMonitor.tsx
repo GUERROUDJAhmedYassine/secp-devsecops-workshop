@@ -7,15 +7,9 @@ export default function LiveMonitor() {
   const { theme, toggleTheme } = useThemeContext();
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredAlerts = mockAlerts.filter(a => 
-    a.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    a.severity.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    a.username.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-page text-primary transition-colors duration-200">
-      
+
       {/* Top Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card transition-colors duration-200 shrink-0">
         <div className="flex items-center gap-4">
@@ -25,7 +19,7 @@ export default function LiveMonitor() {
             LIVE
           </div>
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="relative w-64 hidden md:block">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -53,43 +47,43 @@ export default function LiveMonitor() {
 
       {/* Main Content Scrollable Area */}
       <div className="flex-1 overflow-auto p-6">
-        
+
         {/* KPI Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 mt-2 lg:grid-cols-4 gap-4 mb-6">
-          <KPICard 
-            title="EVENTS TODAY" 
-            value={mockEvents.length > 0 ? "124,802" : "0"} 
-            sub="12.5%" 
+          <KPICard
+            title="EVENTS TODAY"
+            value={mockEvents.length > 0 ? "124,802" : "0"}
+            sub="12.5%"
             subType="positive"
-            icon={<Activity size={16} />} 
+            icon={<Activity size={16} />}
           />
-          <KPICard 
-            title="OPEN ALERTS" 
-            value={mockAlerts.length.toString()} 
-            sub={`Critical: ${mockAlerts.filter(a => a.severity === 'CRITICAL').length}`} 
+          <KPICard
+            title="OPEN ALERTS"
+            value={mockAlerts.length.toString()}
+            sub={`Critical: ${mockAlerts.filter(a => a.severity === 'CRITICAL').length}`}
             subType="negative"
-            icon={<AlertTriangle size={16} />} 
+            icon={<AlertTriangle size={16} />}
             alert
           />
-          <KPICard 
-            title="ACTIVE USERS" 
-            value="1,104" 
-            sub="Across 12 regions" 
+          <KPICard
+            title="ACTIVE USERS"
+            value="1,104"
+            sub="Across 12 regions"
             subType="neutral"
-            icon={<Users size={16} />} 
+            icon={<Users size={16} />}
           />
-          <KPICard 
-            title="DETECTION RULES" 
-            value="856" 
-            sub="Active & Validated" 
+          <KPICard
+            title="DETECTION RULES"
+            value="856"
+            sub="Active & Validated"
             subType="neutral"
-            icon={<Sliders size={16} />} 
+            icon={<Sliders size={16} />}
           />
         </div>
 
         {/* Two Column Layout */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          
+
           {/* Recent Security Alerts */}
           <div className="xl:col-span-2 bg-card border border-border rounded-lg shadow-sm flex flex-col min-h-[400px]">
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
@@ -100,7 +94,7 @@ export default function LiveMonitor() {
                 View All
               </button>
             </div>
-            
+
             <div className="flex-1 overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -203,9 +197,9 @@ function SeverityBadge({ level }: { level: string }) {
     'LOW': 'text-slate-600 bg-slate-500/10 border-slate-500/20 dark:text-slate-400 dark:bg-slate-500/10 dark:border-slate-500/20',
     'INFO': 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/20',
   };
-  
+
   const defaultColor = 'text-slate-500 bg-slate-500/10 border-slate-500/20';
-  
+
   return (
     <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase border ${colors[level] || defaultColor}`}>
       {level}

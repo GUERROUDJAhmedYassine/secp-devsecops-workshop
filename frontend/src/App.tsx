@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import ProtectedRoute from './components/ProtectedRoute';
 import Dashboard from './pages/Dashboard.tsx';
 import FileManager from './pages/FileManager.tsx';
 import Webmail from './pages/Webmail.tsx';
@@ -10,7 +11,6 @@ import { useTheme } from './hooks/useTheme';
 import { ThemeContext } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
 
-import AdminGuard from './components/guards/AdminGuard';
 import LiveMonitor from './pages/admin/LiveMonitor';
 import AlertFeed from './pages/admin/AlertFeed';
 import UserManagement from './pages/admin/UserManagement';
@@ -30,13 +30,15 @@ function AuthenticatedLayout() {
         <Route path="/profile" element={<UserProfile />} />
         <Route path="/settings" element={<Placeholder title="Settings" />} />
 
-        {/* Admin Routes */}
-        <Route path="/admin/monitor" element={<AdminGuard><LiveMonitor /></AdminGuard>} />
-        <Route path="/admin/alerts" element={<AdminGuard><AlertFeed /></AdminGuard>} />
-        <Route path="/admin/events" element={<AdminGuard><EventLog /></AdminGuard>} />
-        <Route path="/admin/users" element={<AdminGuard><UserManagement /></AdminGuard>} />
-        <Route path="/admin/users/:id" element={<AdminGuard><UserProfileForensics /></AdminGuard>} />
-        <Route path="/admin/baselines" element={<AdminGuard><BaselineViewer /></AdminGuard>} />
+        {/* Admin Routes – ProtectedRoute with requireAdmin */}
+        <Route element={<ProtectedRoute requireAdmin />}>
+          <Route path="/admin/monitor" element={<LiveMonitor />} />
+          <Route path="/admin/alerts" element={<AlertFeed />} />
+          <Route path="/admin/events" element={<EventLog />} />
+          <Route path="/admin/users" element={<UserManagement />} />
+          <Route path="/admin/users/:id" element={<UserProfileForensics />} />
+          <Route path="/admin/baselines" element={<BaselineViewer />} />
+        </Route>
       </Routes>
     </div>
   );
@@ -51,7 +53,10 @@ function App() {
         <SidebarProvider>
           <Routes>
             <Route path="/" element={<Login />} />
-            <Route path="/*" element={<AuthenticatedLayout />} />
+            {/* All authenticated routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/*" element={<AuthenticatedLayout />} />
+            </Route>
           </Routes>
         </SidebarProvider>
       </BrowserRouter>

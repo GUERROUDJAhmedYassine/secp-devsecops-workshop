@@ -1,22 +1,37 @@
+/* ------------------------------------------------------------------
+ *  useDashboard hook
+ *  Fetches the current user and dashboard stats conditionally.
+ * ------------------------------------------------------------------ */
+
 import { useState, useEffect } from 'react';
-import { getUser, getStats } from '../api/dashboard';
-import type { User } from '../types/auth.types';
+import { getStats } from '../api/dashboard';
+import { useAuth } from './useAuth';
 
 export function useDashboard() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [user, setUser] = useState<User | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [stats, setStats] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, isManagerOrAbove, isLoading: authLoading } = useAuth();
+  const [stats, setStats] = useState<Record<string, unknown> | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   useEffect(() => {
-    Promise.all([getUser(), getStats()])
-      .then(([u, s]) => {
-        setUser(u as User);
-        setStats(s);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+    if (authLoading || !user) return;
 
-  return { user, stats, loading };
+    if (isManagerOrAbove) {
+      setLoadingStats(true);
+      getStats()
+        .then((s) => setStats(s))
+        .catch(console.error)
+        .finally(() => setLoadingStats(false));
+    } else {
+      setStats({
+        unread_emails: 3,
+        new_messages: 1,
+        my_files_count: 8,
+        my_files_size: '42 MB',
+        vpn_status: 'Active',
+        vpn_ip: '10.8.0.44',
+      });
+    }
+  }, [user, isManagerOrAbove, authLoading]);
+
+  return { user, stats, loading: authLoading || loadingStats };
 }

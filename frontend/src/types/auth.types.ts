@@ -1,8 +1,6 @@
-export interface User {
-  id: string;
-  username: string;
-  full_name: string;
-  role: 'EMPLOYEE' | 'MANAGER' | 'IT_ADMIN';
-  department: string;
-  vpn_status: 'Active' | 'Inactive';
-}
+/* ------------------------------------------------------------------
+ *  Backward-compatible auth types re-export.
+ *  The canonical types now live in user.types.ts.
+ * ------------------------------------------------------------------ */
+
+export type { User, UserRole } from './user.types';

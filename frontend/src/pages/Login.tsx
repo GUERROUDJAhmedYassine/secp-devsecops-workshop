@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useThemeContext } from '../context/ThemeContext';
+import { useAuth } from '../hooks/useAuth';
 import { 
   ShieldPlus, 
   User, 
-  Lock, 
   Eye, 
   XCircle, 
   Globe, 
@@ -15,10 +16,30 @@ import {
 export default function Login() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useThemeContext();
+  const { login, error, clearError, isLoading } = useAuth();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/dashboard');
+    setLocalError(null);
+    clearError();
+    
+    if (!username || !password) {
+      setLocalError('Username and password are required');
+      return;
+    }
+    
+    try {
+      await login({ username, password });
+      navigate('/dashboard');
+    } catch (err) {
+      // The error is already populated in the context (accessible via `error`)
+      // But we prevent default browser behavior
+    }
   };
 
   return (
@@ -64,11 +85,11 @@ export default function Login() {
                   placeholder="Enter your username"
                   className="w-full pl-10 pr-4 py-2 bg-[#0f1117] dark:bg-[#1a2035] border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-blue-500 transition-colors"
                   style={{ backgroundColor: 'var(--bg-page)' }}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={isLoading}
                 />
               </div>
-              <span className="text-[10px] text-red-500 font-bold uppercase tracking-wider ml-1">
-                This field is required
-              </span>
             </div>
 
             {/* Password Input Group */}
@@ -77,14 +98,19 @@ export default function Login() {
                 <LockKeyhole size={16} className="text-muted" />
               </div>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="Enter your password"
                 className="w-full pl-10 pr-10 py-2 border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-blue-500 transition-colors"
                 style={{ backgroundColor: 'var(--bg-page)' }}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading}
               />
               <button 
                 type="button" 
                 className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted hover:text-primary transition-colors"
+                onClick={() => setShowPassword(!showPassword)}
+                disabled={isLoading}
               >
                 <Eye size={16} />
               </button>
@@ -92,29 +118,27 @@ export default function Login() {
 
             {/* Error Banners */}
             <div className="flex flex-col gap-2 mt-2">
-              {/* Invalid Credentials Error */}
-              <div className="bg-red-50 dark:bg-red-950/30 border-l-[3px] border-red-500 p-3 flex items-center gap-3">
-                <XCircle size={16} className="text-red-500 shrink-0" />
-                <p className="text-xs text-red-600 dark:text-red-400 font-medium">
-                  Invalid username or password. Please try again.
-                </p>
-              </div>
-
-              {/* Locked Account Warning */}
-              <div className="bg-slate-100 dark:bg-slate-800/50 border-l-[3px] border-slate-400 dark:border-slate-500 p-3 flex items-center gap-3">
-                <Lock size={16} className="text-slate-600 dark:text-slate-400 shrink-0" />
-                <p className="text-xs text-slate-700 dark:text-slate-300 font-medium">
-                  Account locked. Too many failed attempts. Try again in 15 minutes.
-                </p>
-              </div>
+              {(error || localError) && (
+                <div className="bg-red-50 dark:bg-red-950/30 border-l-[3px] border-red-500 p-3 flex items-center gap-3">
+                  <XCircle size={16} className="text-red-500 shrink-0" />
+                  <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                    {localError || error}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Submit Button */}
             <button
               type="submit"
-              className="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-md text-sm transition-colors"
+              disabled={isLoading}
+              className={`mt-2 w-full font-medium py-2.5 rounded-md text-sm transition-colors ${
+                isLoading 
+                  ? 'bg-blue-600/50 text-white/70 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}
             >
-              SIGN IN
+              {isLoading ? 'SIGNING IN...' : 'SIGN IN'}
             </button>
           </form>
 

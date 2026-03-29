@@ -1,11 +1,11 @@
-import { Search, Bell, Moon, Sun, MoreVertical, Plus, Mail, MessageSquare, Vault, Shield, Settings, Send, Menu } from 'lucide-react';
+import { Search, Bell, Moon, Sun, MoreVertical, Plus, Mail, MessageSquare, Vault, Shield, Settings, Send, Menu, Activity, AlertTriangle } from 'lucide-react';
 import { useDashboard } from '../hooks/useDashboard';
 import { useEmails } from '../hooks/useEmails';
 import { useThemeContext } from '../context/ThemeContext';
 import { useSidebar } from '../context/SidebarContext';
 
 export default function Dashboard() {
-  const { stats, loading: dashboardLoading } = useDashboard();
+  const { user, stats, loading: dashboardLoading } = useDashboard();
   const { emails, chat, loading: emailsLoading } = useEmails();
   const { theme, toggleTheme } = useThemeContext();
   const { toggleSidebar } = useSidebar();
@@ -13,6 +13,8 @@ export default function Dashboard() {
   if (dashboardLoading || emailsLoading) {
     return <div className="p-8 flex items-center justify-center h-full text-muted font-medium bg-page transition-colors duration-200">Loading Dashboard...</div>;
   }
+
+  const isAdmin = user?.role === 'IT_ADMIN';
 
   return (
     <div className="flex-1 min-w-0 bg-page h-screen overflow-y-auto transition-colors duration-200">
@@ -45,6 +47,30 @@ export default function Dashboard() {
       </header>
 
       <main className="p-4 sm:p-8 max-w-[1600px] mx-auto space-y-6">
+        
+        {/* Admin/SIEM Dashboard Warning (conditional) */}
+        {isAdmin && (
+          <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Shield className="w-6 h-6 text-red-500" />
+              <div>
+                <h3 className="text-red-500 font-bold text-sm tracking-wide">SIEM COMMAND CENTER ACTIVE</h3>
+                <p className="text-muted text-xs font-semibold">System metrics and live security threat models are actively being monitored.</p>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <div className="text-center px-4 border-r border-red-500/20">
+                <span className="block text-[10px] text-red-400 font-bold uppercase tracking-wider">Critical Alerts</span>
+                <span className="text-xl font-bold text-primary">{String(stats?.active_alerts ?? '0')}</span>
+              </div>
+              <div className="text-center px-4">
+                <span className="block text-[10px] text-[#4f8ef7] font-bold uppercase tracking-wider">Monitored Events</span>
+                <span className="text-xl font-bold text-primary">{String(stats?.events_monitored ?? '14,024')}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="p-5 bg-card border border-border rounded-xl flex flex-col justify-between h-32 hover:border-[#4f8ef7]/50 transition-colors shadow-sm cursor-pointer group">
@@ -53,7 +79,7 @@ export default function Dashboard() {
               <Mail className="w-4 h-4 text-[#4f8ef7]" />
             </div>
             <div className="flex items-baseline gap-2 mt-auto">
-              <span className="text-3xl font-bold text-primary">{stats?.unread_emails}</span>
+              <span className="text-3xl font-bold text-primary">{String(stats?.unread_emails ?? '')}</span>
               <span className="text-sm font-medium text-[#4f8ef7]">+2 today</span>
             </div>
           </div>
@@ -64,7 +90,7 @@ export default function Dashboard() {
               <MessageSquare className="w-4 h-4 text-[#4f8ef7]" />
             </div>
             <div className="flex items-baseline gap-2 mt-auto">
-              <span className="text-3xl font-bold text-primary">{stats?.new_messages}</span>
+              <span className="text-3xl font-bold text-primary">{String(stats?.new_messages ?? '')}</span>
               <span className="text-sm font-medium text-[#ef4444]">Urgent</span>
             </div>
           </div>
@@ -75,8 +101,8 @@ export default function Dashboard() {
               <Vault className="w-4 h-4 text-[#4f8ef7]" />
             </div>
             <div className="flex items-baseline gap-2 mt-auto">
-              <span className="text-3xl font-bold text-primary">{stats?.my_files_count}</span>
-              <span className="text-sm font-medium text-muted">{stats?.my_files_size}</span>
+              <span className="text-3xl font-bold text-primary">{String(stats?.my_files_count ?? '')}</span>
+              <span className="text-sm font-medium text-muted">{String(stats?.my_files_size ?? '')}</span>
             </div>
           </div>
 
@@ -88,12 +114,74 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mt-auto">
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-[#22c55e] shadow-[0_0_10px_#22c55e]"></div>
-                <span className="text-sm font-bold text-primary">{stats?.vpn_status}</span>
+                <span className="text-sm font-bold text-primary">{String(stats?.vpn_status ?? '')}</span>
               </div>
-              <span className="text-xs font-mono text-muted bg-page px-2 py-1 rounded transition-colors duration-200">{stats?.vpn_ip}</span>
+              <span className="text-xs font-mono text-muted bg-page px-2 py-1 rounded transition-colors duration-200">{String(stats?.vpn_ip ?? '')}</span>
             </div>
           </div>
         </div>
+
+        {isAdmin && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+             <div className="bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col justify-between group cursor-pointer hover:border-[#4f8ef7]/50 transition-colors">
+               <div className="flex items-center justify-between mb-4">
+                 <h2 className="text-lg font-bold text-primary flex items-center gap-2">
+                   <Activity className="w-5 h-5 text-purple-500" />
+                   System Health Monitor
+                 </h2>
+                 <span className="text-[10px] font-bold text-purple-500 bg-purple-500/10 px-2 py-1 rounded-full uppercase tracking-widest">Running</span>
+               </div>
+               <div className="space-y-4">
+                 <div>
+                   <div className="flex justify-between text-xs font-bold text-muted mb-1">
+                     <span>CPU Usage</span>
+                     <span className="text-primary">{String(stats?.system_cpu ?? '34%')}</span>
+                   </div>
+                   <div className="w-full h-1.5 bg-page rounded-full overflow-hidden">
+                     <div className="h-full bg-purple-500 w-[34%]"></div>
+                   </div>
+                 </div>
+                 <div>
+                   <div className="flex justify-between text-xs font-bold text-muted mb-1">
+                     <span>Memory Usage</span>
+                     <span className="text-primary">{String(stats?.system_memory ?? '61%')}</span>
+                   </div>
+                   <div className="w-full h-1.5 bg-page rounded-full overflow-hidden">
+                     <div className="h-full bg-[#4f8ef7] w-[61%]"></div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+
+             <div className="bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col justify-between group cursor-pointer hover:border-red-500/50 transition-colors">
+               <div className="flex items-center justify-between mb-4">
+                 <h2 className="text-lg font-bold text-primary flex items-center gap-2">
+                   <AlertTriangle className="w-5 h-5 text-red-500" />
+                   Recent SIEM Alerts
+                 </h2>
+                 <button className="text-[11px] font-bold text-red-500 tracking-widest uppercase hover:text-red-400 transition-colors">REVIEW ALL</button>
+               </div>
+               <div className="space-y-3">
+                 <div className="flex items-center gap-3 p-3 bg-red-500/5 border border-red-500/10 rounded-lg">
+                   <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                   <div className="flex-1">
+                     <p className="text-sm font-bold text-primary">Failed Login Spikes</p>
+                     <p className="text-xs text-muted">Detected multiple failed attempts from 192.168.1.104</p>
+                   </div>
+                   <span className="text-xs font-bold text-red-500">2m ago</span>
+                 </div>
+                 <div className="flex items-center gap-3 p-3 bg-orange-500/5 border border-orange-500/10 rounded-lg">
+                   <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                   <div className="flex-1">
+                     <p className="text-sm font-bold text-primary">Suspicious File Access</p>
+                     <p className="text-xs text-muted">User 'employee2' accessed restricted baseline log</p>
+                   </div>
+                   <span className="text-xs font-bold text-orange-500">14m ago</span>
+                 </div>
+               </div>
+             </div>
+          </div>
+        )}
 
         {/* Panels */}
         <div className="flex flex-col lg:flex-row gap-6 mt-6">

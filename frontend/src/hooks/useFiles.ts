@@ -1,3 +1,8 @@
+/* ------------------------------------------------------------------
+ *  useFiles hook
+ *  Fetches files, storage info, and vault info from the real API.
+ * ------------------------------------------------------------------ */
+
 import { useState, useEffect } from 'react';
 import { getFiles, getStorageInfo, getVaultInfo } from '../api/files';
 import type { SecureFile, StorageInfo, VaultInfo } from '../types/files.types';
@@ -11,10 +16,11 @@ export function useFiles(bucketFilter: string) {
   useEffect(() => {
     Promise.all([getFiles(), getStorageInfo(), getVaultInfo()])
       .then(([f, s, v]) => {
-        setFiles(f as SecureFile[]);
-        setStorage(s as StorageInfo);
-        setVaultInfo(v as VaultInfo);
+        setFiles(f);
+        setStorage(s);
+        setVaultInfo(v);
       })
+      .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
@@ -24,7 +30,7 @@ export function useFiles(bucketFilter: string) {
       : files.filter((f) => f.bucket === bucketFilter);
 
   const addFile = (newFile: SecureFile) => {
-    setFiles(prev => [newFile, ...prev]);
+    setFiles((prev) => [newFile, ...prev]);
   };
 
   return { files: filtered, storage, vaultInfo, loading, addFile };

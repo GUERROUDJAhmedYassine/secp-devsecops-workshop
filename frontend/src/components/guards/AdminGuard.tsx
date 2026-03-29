@@ -1,10 +1,9 @@
-import { Navigate } from 'react-router-dom';
+/* ------------------------------------------------------------------
+ *  AdminGuard (legacy wrapper – now delegates to ProtectedRoute)
+ * ------------------------------------------------------------------ */
 
-const MOCK_ROLE = 'IT_ADMIN';
+import ProtectedRoute from '../ProtectedRoute';
 
 export default function AdminGuard({ children }: { children: React.ReactNode }) {
-  if (MOCK_ROLE !== 'IT_ADMIN') {
-    return <Navigate to="/" replace />;
-  }
-  return <>{children}</>;
+  return <ProtectedRoute requireAdmin>{children}</ProtectedRoute>;
 }

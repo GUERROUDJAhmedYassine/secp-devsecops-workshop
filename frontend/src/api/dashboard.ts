@@ -1,11 +1,16 @@
-import { MOCK_USER, MOCK_STATS } from '../mocks/dashboard.mock';
+/* ------------------------------------------------------------------
+ *  Dashboard API
+ *  Fetches the current user and dashboard stats from real endpoints.
+ * ------------------------------------------------------------------ */
 
-export async function getUser() {
-  // TODO: return axios.get('/auth/me').then(r => r.data)
-  return MOCK_USER;
+import { AUTH_BASE, SIEM_BASE } from '../lib/constants';
+import { apiGet } from '../lib/apiClient';
+import type { User } from '../types/user.types';
+
+export async function getUser(): Promise<User> {
+  return apiGet<User>(`${AUTH_BASE}/auth/me`);
 }
 
-export async function getStats() {
-  // TODO: return axios.get('/dashboard/stats').then(r => r.data)
-  return MOCK_STATS;
+export async function getStats(): Promise<Record<string, unknown>> {
+  return apiGet<Record<string, unknown>>(`${SIEM_BASE}/dashboard/stats`);
 }

@@ -1,5 +1,6 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useDashboard } from '../hooks/useDashboard';
+import { useAuth } from '../hooks/useAuth';
 import { useSidebar } from '../context/SidebarContext';
 import {
   Shield,
@@ -14,14 +15,15 @@ import {
   Bell,
   FileText,
   Users,
-  Sliders
+  Sliders,
+  LogOut
 } from 'lucide-react';
-
-const MOCK_ROLE = 'IT_ADMIN';
 
 export default function Sidebar() {
   const { user, loading } = useDashboard();
+  const { isAdmin, logout } = useAuth();
   const { isSidebarOpen, setSidebarOpen } = useSidebar();
+  const navigate = useNavigate();
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -86,7 +88,7 @@ export default function Sidebar() {
           </NavLink>
         ))}
 
-        {MOCK_ROLE === 'IT_ADMIN' && (
+        {isAdmin && (
           <>
             <div className="text-[10px] font-bold text-[#8892a4] uppercase tracking-wider mb-2 mt-6 px-3 border-t border-[#2a3148] pt-4">SIEM</div>
             {adminNavItems.slice(0, 3).map((item) => (
@@ -144,11 +146,22 @@ export default function Sidebar() {
         <NavLink
           to="/settings"
           onClick={() => setSidebarOpen(false)}
-          className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-[#8892a4] hover:bg-white/5 hover:text-[#e2e8f0] rounded-lg transition-colors mb-4"
+          className="flex items-center gap-3 px-4 py-2 text-sm font-medium text-[#8892a4] hover:bg-white/5 hover:text-[#e2e8f0] rounded-lg transition-colors mb-2"
         >
           <Settings className="w-4 h-4" />
           Settings
         </NavLink>
+
+        <button
+          onClick={async () => {
+            await logout();
+            navigate('/');
+          }}
+          className="flex items-center gap-3 px-4 py-2 w-full text-sm font-medium text-red-400 hover:bg-red-500/10 rounded-lg transition-colors mb-4"
+        >
+          <LogOut className="w-4 h-4" />
+          Logout
+        </button>
 
         {!loading && user && (
           <div className="flex items-center gap-3 px-3 py-2.5 bg-white/5 border border-[#2a3148] rounded-lg shadow-sm">

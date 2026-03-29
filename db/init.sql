@@ -182,20 +182,3 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA siem TO siem_service;
 -- Siem service also needs to read app.users (for FK resolution)
 GRANT USAGE ON SCHEMA app TO siem_service;
 GRANT SELECT ON app.users TO siem_service;
-
--- SEED DATA — default IT_ADMIN account for first login
-INSERT INTO app.users (
-    username,
-    email,
-    password_hash,
-    role,
-    department,
-    is_active
-) VALUES (
-    'admin',
-    'admin@company.dz',
-    '$2a$12$e4v5nHjTATfh1st8KYzWiOAO5zSCxyI4b2Sjb1W7qlnjp9E0JQq6O',
-    'IT_ADMIN',
-    'Security',
-    TRUE
-);

@@ -91,6 +91,7 @@ class UserResponse(BaseModel):
             department=user.department,
             is_active=user.is_active,
             failed_logins=user.failed_logins,
+            last_login_at=user.last_login_at,
             locked_until=user.locked_until,
             risk_score=0
         )

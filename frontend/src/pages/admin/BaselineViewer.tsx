@@ -1,27 +1,30 @@
 import { useState } from 'react';
-import { Search, Bell, Moon, Sun, MoreVertical, AlertTriangle, ChevronDown } from 'lucide-react';
+import { Search, Bell, Moon, Sun, MoreVertical, AlertTriangle, ChevronDown, Menu } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
-
+import { useSidebar } from '../../context/SidebarContext';
 export default function BaselineViewer() {
   const { theme, toggleTheme } = useThemeContext();
   const [searchTerm, setSearchTerm] = useState('');
-
+  const { toggleSidebar } = useSidebar();
   const auditTrail = [
     { time: '2023-10-24 22:14:05', tag: 'AUTH_SUCC', color: 'text-blue-500', detail: 'User Fatima Khaldi initiated remote session from 45.33.22.11' },
     { time: '2023-10-24 22:15:12', tag: 'FILE_ACCESS', color: 'text-orange-500', detail: 'Accessed non-standard directory: /etc/secure_vault/keys/' },
     { time: '2023-10-24 22:18:44', tag: 'SEC_ALERT', color: 'text-red-500', detail: 'Confidence score drop detected: 92% -> 28% (Deviation: Location/Time)' },
   ];
 
-  const filteredAudit = auditTrail.filter(item => 
-    item.detail.toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filteredAudit = auditTrail.filter(item =>
+    item.detail.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.tag.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-page text-primary transition-colors duration-200">
-      
+
       {/* Top Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card transition-colors duration-200 shrink-0">
+        <button onClick={toggleSidebar} className="md:hidden p-2 -ml-2 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
+          <Menu className="w-6 h-6" />
+        </button>
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold tracking-wide text-blue-500">Baseline Viewer</h1>
           <span className="text-muted">/</span>
@@ -30,7 +33,7 @@ export default function BaselineViewer() {
             <ChevronDown size={14} className="text-muted" />
           </button>
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="relative w-64 hidden md:block">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -58,7 +61,7 @@ export default function BaselineViewer() {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto p-6 flex flex-col gap-6">
-        
+
         {/* Warning Banner */}
         <div className="bg-amber-500/10 border-l-[3px] border-amber-500 p-4 rounded-r-lg flex items-center justify-between">
           <div className="flex items-start gap-3">
@@ -84,7 +87,7 @@ export default function BaselineViewer() {
               <span className="text-[8px] tracking-wider uppercase text-muted font-bold">Confidence</span>
             </div>
           </div>
-          
+
           <div className="bg-card border border-border px-5 py-4 rounded-lg flex flex-col justify-between shadow-sm">
             <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Average Session</span>
             <div className="flex flex-col gap-1">
@@ -138,7 +141,7 @@ export default function BaselineViewer() {
                 </span>
               ))}
             </div>
-            
+
             <div className="border border-border/50 rounded-lg p-4 bg-page/50 flex flex-col gap-2 mt-auto">
               <div className="flex items-center justify-between">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-muted">New IP Detected</span>
@@ -157,7 +160,7 @@ export default function BaselineViewer() {
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500 block"></span> Actual</span>
               </div>
             </div>
-            
+
             <div className="flex-1 flex items-end gap-2 sm:gap-4 h-48 mt-2">
               {/* Mock Bar Chart */}
               {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day, i) => {
@@ -165,7 +168,7 @@ export default function BaselineViewer() {
                 const expectedHeight = i === 1 ? '60%' : i === 2 ? '65%' : '55%';
                 const actualHeight = i > 3 ? (i === 4 ? '35%' : i === 5 ? '25%' : '15%') : expectedHeight;
                 const isOrange = i > 3;
-                
+
                 return (
                   <div key={day} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
                     <div className="w-full flex items-end justify-center h-[90%] gap-1">

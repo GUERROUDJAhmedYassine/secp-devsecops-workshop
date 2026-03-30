@@ -56,10 +56,10 @@ export default function Login() {
         </button>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center pb-20">
+      <div className="flex-1 flex flex-col items-center justify-center p-4">
         
         {/* Main Login Card */}
-        <div className="w-[420px] bg-card border border-border rounded-lg shadow-sm p-8 flex flex-col relative z-10 transition-colors duration-200">
+        <div className="w-full max-w-[420px] bg-card border border-border rounded-lg shadow-sm p-6 sm:p-8 flex flex-col relative z-10 transition-colors duration-200">
           
           {/* Header */}
           <div className="flex flex-col items-center mb-8">
@@ -152,7 +152,7 @@ export default function Login() {
         </div>
 
         {/* Page Footer */}
-        <div className="absolute bottom-10 inset-x-0 flex flex-col items-center justify-center text-center px-6">
+        <div className="mt-12 flex flex-col items-center justify-center text-center px-4 w-full">
           <div className="flex items-center gap-2 mb-3">
             <Globe size={14} className="text-muted" />
             <h2 className="text-[10px] font-bold tracking-[0.2em] text-primary uppercase">

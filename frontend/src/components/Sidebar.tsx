@@ -166,10 +166,10 @@ export default function Sidebar() {
         {!loading && user && (
           <div className="flex items-center gap-3 px-3 py-2.5 bg-white/5 border border-[#2a3148] rounded-lg shadow-sm">
             <div className="w-8 h-8 rounded-full bg-[#4f8ef7]/20 text-[#4f8ef7] flex items-center justify-center font-bold text-xs border border-[#4f8ef7]/30">
-              {user.full_name.split(' ').map((n: string) => n[0]).join('')}
+              {user.username.substring(0, 2).toUpperCase()}
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-semibold text-[#e2e8f0] line-clamp-1">{user.full_name}</span>
+              <span className="text-sm font-semibold text-[#e2e8f0] line-clamp-1">{user.username}</span>
               <span className="text-[#4f8ef7] text-[10px] tracking-wider font-bold">{user.role}</span>
             </div>
           </div>

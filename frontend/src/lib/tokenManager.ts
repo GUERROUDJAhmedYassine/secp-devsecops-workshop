@@ -21,15 +21,22 @@ export function getRefreshToken(): string | null {
 }
 
 export function setTokens(tokens: AuthTokens): void {
+  // Store in localStorage for application logic
   localStorage.setItem(ACCESS_KEY, tokens.access_token);
+  // Store in document.cookie so they show up in browser "Cookies" tab (client-side cookies)
+  document.cookie = `${ACCESS_KEY}=${tokens.access_token}; path=/; max-age=86400; SameSite=Strict`;
+  
   if (tokens.refresh_token) {
     localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
+    document.cookie = `${REFRESH_KEY}=${tokens.refresh_token}; path=/; max-age=604800; SameSite=Strict`;
   }
 }
 
 export function clearTokens(): void {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  document.cookie = `${ACCESS_KEY}=; path=/; max-age=0;`;
+  document.cookie = `${REFRESH_KEY}=; path=/; max-age=0;`;
 }
 
 /* ---- silent refresh ---- */

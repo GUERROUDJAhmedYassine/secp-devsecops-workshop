@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { Search, Bell, Moon, Sun, MoreVertical, Activity, AlertTriangle, Users, Sliders } from 'lucide-react';
+import { Search, Bell, Moon, Sun, MoreVertical, Activity, AlertTriangle, Users, Menu, Sliders } from 'lucide-react';
 import { mockAlerts, mockEvents } from '../../mock/mockAuth';
 import { useThemeContext } from '../../context/ThemeContext';
+import { useSidebar } from '../../context/SidebarContext';
 
 export default function LiveMonitor() {
   const { theme, toggleTheme } = useThemeContext();
   const [searchTerm, setSearchTerm] = useState('');
-
+  const { toggleSidebar } = useSidebar();
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-page text-primary transition-colors duration-200">
 
       {/* Top Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card transition-colors duration-200 shrink-0">
         <div className="flex items-center gap-4">
+          <button onClick={toggleSidebar} className="md:hidden p-2 -ml-2 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
+            <Menu className="w-6 h-6" />
+          </button>
           <h1 className="text-xl font-bold tracking-tight">Live Monitor</h1>
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-bold tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>

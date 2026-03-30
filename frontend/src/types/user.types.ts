@@ -7,14 +7,16 @@ export type UserRole = 'EMPLOYEE' | 'MANAGER' | 'IT_ADMIN';
 export interface User {
   id: string;
   username: string;
-  full_name: string;
   email: string;
   role: UserRole;
-  department: string;
-  vpn_status: 'Active' | 'Inactive';
+  department: string | null;
   is_active: boolean;
-  created_at: string;
-  last_login: string | null;
+  failed_logins: number;
+  locked_until: string | null;
+  vpn_public_key: string | null;
+  last_login_at: string | null;
+  created_at: string | null;
+  risk_score: number;
 }
 
 export interface AuthTokens {
@@ -31,13 +33,12 @@ export interface LoginCredentials {
 export interface RegisterPayload {
   username: string;
   password: string;
-  full_name: string;
   email: string;
   department: string;
   role?: UserRole;
 }
 
 export interface PasswordChangePayload {
-  current_password: string;
+  old_password: string;
   new_password: string;
 }

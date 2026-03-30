@@ -61,22 +61,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
 
     try {
-      /* The FastAPI OAuth2 form-based login expects x-www-form-urlencoded */
-      const formData = new URLSearchParams();
-      formData.append('username', creds.username);
-      formData.append('password', creds.password);
-
+      /* The FastAPI login endpoint expects JSON for body: UserLogin */
       const res = await fetch(`${AUTH_BASE}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: creds.username,
+          password: creds.password,
+        }),
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          (body as Record<string, string>).detail ?? 'Invalid credentials',
-        );
+        let errMessage = 'Invalid credentials';
+        try {
+          const body = await res.json();
+          if (Array.isArray(body.detail)) {
+            // FastAPI validation error array inside detail
+            errMessage = body.detail[0]?.msg || 'Validation Error';
+          } else if (body.detail) {
+            errMessage = body.detail;
+          }
+        } catch (e) {
+          // ignore parsing error
+        }
+        throw new Error(errMessage);
       }
 
       const tokens: AuthTokens = await res.json();

@@ -41,7 +41,7 @@ export default function FileManager() {
     if (!file) return;
 
     await uploadFile(file);
-    
+
     let category: FileCategory = 'archive';
     if (file.type.includes('image')) category = 'image';
     else if (file.type.includes('pdf')) category = 'pdf';
@@ -98,14 +98,14 @@ export default function FileManager() {
         {/* Filter Bar */}
         <div className="bg-card border border-border rounded-xl p-4 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 shadow-sm transition-colors duration-200">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 w-full xl:w-auto">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileUpload} 
-              className="hidden" 
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
             />
-            <button 
-              className="flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-[#4f8ef7] hover:bg-[#3b7ae5] text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-[#4f8ef7]/20 w-full sm:w-auto" 
+            <button
+              className="flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-[#4f8ef7] hover:bg-[#3b7ae5] text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-[#4f8ef7]/20 w-full sm:w-auto"
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="w-4 h-4" /> Upload File
@@ -129,11 +129,11 @@ export default function FileManager() {
           <div className="flex items-center gap-4 text-sm bg-page px-4 py-2 rounded-lg border border-border transition-colors duration-200 w-full xl:w-auto justify-between">
             <span className="text-muted font-medium tracking-wide text-xs">STORAGE:</span>
             <div className="flex items-center gap-3">
-              <span className="text-primary font-semibold">{storage?.used_gb} GB <span className="text-muted font-normal">/ {storage?.total_gb} GB</span></span>
+              <span className="text-primary font-semibold">{storage?.used_gb ?? 0} GB <span className="text-muted font-normal">/ {storage?.total_gb ?? 0} GB</span></span>
               <div className="w-32 h-2 bg-card rounded-full overflow-hidden border border-border transition-colors duration-200">
                 <div
                   className="h-full bg-gradient-to-r from-[#4f8ef7] to-[#81abea] rounded-full"
-                  style={{ width: `${(storage!.used_gb / storage!.total_gb) * 100}%` }}
+                  style={{ width: `${((storage?.used_gb ?? 0) / (storage?.total_gb ?? 1)) * 100}%` }}
                 ></div>
               </div>
             </div>

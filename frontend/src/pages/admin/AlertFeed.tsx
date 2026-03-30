@@ -1,26 +1,30 @@
 import { useState } from 'react';
-import { Search, Bell, MoreVertical, Moon, Sun, MinusSquare, PlusSquare } from 'lucide-react';
+import { Search, Bell, MoreVertical, Moon, Sun, MinusSquare, PlusSquare, Menu } from 'lucide-react';
 import { mockAlerts, mockEvents } from '../../mock/mockAuth';
 import { useThemeContext } from '../../context/ThemeContext';
+import { useSidebar } from '../../context/SidebarContext';
 
 export default function AlertFeed() {
   const [activeTab, setActiveTab] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const { theme, toggleTheme } = useThemeContext();
-  
+  const { toggleSidebar } = useSidebar();
   const filteredAlerts = mockAlerts.filter(a => {
     const matchesTab = activeTab === 'All' || a.status.toLowerCase() === activeTab.toLowerCase();
-    const matchesSearch = a.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          a.severity.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          a.username.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = a.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.severity.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.username.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesTab && matchesSearch;
   });
 
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-page text-primary transition-colors duration-200">
-      
+
       {/* Top Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card transition-colors duration-200 shrink-0">
+        <button onClick={toggleSidebar} className="md:hidden p-2 -ml-2 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
+          <Menu className="w-6 h-6" />
+        </button>
         <div className="flex items-center gap-6">
           <h1 className="text-xl font-bold tracking-tight">Alert Feed</h1>
           <nav className="hidden sm:flex items-center gap-1">
@@ -28,18 +32,17 @@ export default function AlertFeed() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === tab 
-                    ? 'bg-blue-500/10 text-blue-500' 
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${activeTab === tab
+                    ? 'bg-blue-500/10 text-blue-500'
                     : 'text-muted hover:text-primary hover:bg-page/50'
-                }`}
+                  }`}
               >
                 {tab}
               </button>
             ))}
           </nav>
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="relative w-64 hidden md:block">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -67,7 +70,7 @@ export default function AlertFeed() {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto p-6 flex flex-col gap-4">
-        
+
         {/* Alerts List */}
         <div className="flex flex-col gap-4">
           {filteredAlerts.map(alert => (
@@ -109,7 +112,7 @@ function AlertCard({ alert }: { alert: any }) {
   return (
     <div className="border border-border rounded-lg bg-card shadow-sm overflow-hidden flex flex-col transition-colors">
       <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        
+
         {/* Left Side: Severity & Title */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <SeverityBadge level={alert.severity} />
@@ -128,10 +131,9 @@ function AlertCard({ alert }: { alert: any }) {
           <div className="flex flex-col text-right w-24">
             <span className="text-[9px] uppercase tracking-wider text-muted font-bold">Status</span>
             <span className="text-xs font-semibold capitalize flex items-center justify-end gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                alert.status === 'OPEN' ? 'bg-blue-500' :
-                alert.status === 'INVESTIGATING' ? 'bg-amber-500' : 'bg-green-500'
-              }`}></span>
+              <span className={`w-1.5 h-1.5 rounded-full ${alert.status === 'OPEN' ? 'bg-blue-500' :
+                  alert.status === 'INVESTIGATING' ? 'bg-amber-500' : 'bg-green-500'
+                }`}></span>
               {alert.status.toLowerCase()}
             </span>
           </div>
@@ -149,14 +151,14 @@ function AlertCard({ alert }: { alert: any }) {
       {/* Expandable Evidence Section */}
       {relatedEvents.length > 0 && (
         <div className="border-t border-border/50 bg-page/30">
-          <button 
+          <button
             onClick={() => setExpanded(!expanded)}
             className="w-full flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-muted hover:text-primary transition-colors focus:outline-none"
           >
             {expanded ? <MinusSquare size={14} /> : <PlusSquare size={14} />}
             <span className="tracking-wide uppercase text-[10px]">Evidence Logs (Last {relatedEvents.length} Events)</span>
           </button>
-          
+
           {expanded && (
             <div className="px-5 pb-5">
               <table className="w-full text-left text-xs border-collapse">
@@ -213,9 +215,9 @@ function SeverityBadge({ level }: { level: string }) {
     'LOW': 'text-slate-600 bg-slate-500/10 border-slate-500/20 dark:text-slate-400',
     'INFO': 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400',
   };
-  
+
   const defaultColor = 'text-slate-500 bg-slate-500/10 border-slate-500/20';
-  
+
   return (
     <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase border ${colors[level] || defaultColor}`}>
       {level}

@@ -76,6 +76,9 @@ class UserResponse(BaseModel):
     is_active:  bool
     failed_logins: int = 0
     locked_until: Optional[datetime] = None
+    vpn_public_key: Optional[str] = None
+    last_login_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     risk_score: int = 0
 
     class Config:
@@ -91,8 +94,10 @@ class UserResponse(BaseModel):
             department=user.department,
             is_active=user.is_active,
             failed_logins=user.failed_logins,
-            last_login_at=user.last_login_at,
             locked_until=user.locked_until,
+            vpn_public_key=user.vpn_public_key,
+            last_login_at=user.last_login_at,
+            created_at=user.created_at,
             risk_score=0
         )
 

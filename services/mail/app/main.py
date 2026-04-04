@@ -16,6 +16,7 @@ Endpoints:
     DELETE /mail/{email_id}
     GET    /health
 """
+import os
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Request, status
 from sqlalchemy.orm import Session
@@ -167,9 +168,15 @@ async def send_email(
         attachment_path=attachment_path,
         attachment_size_bytes=attachment_size_bytes,
     )
-    db.add(email)
-    db.commit()
-    db.refresh(email)
+    try:
+        db.add(email)
+        db.commit()
+        db.refresh(email)
+    except Exception:
+        if attachment_path and os.path.exists(attachment_path):
+            os.remove(attachment_path)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to save email")
 
     # ── 6. Forward to MailHog (visual SMTP confirmation — non-fatal) ──────────
     await forward_to_mailhog(

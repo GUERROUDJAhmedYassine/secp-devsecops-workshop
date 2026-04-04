@@ -2,10 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install dependencies first (cached layer)
 COPY requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+# Copy service files
+COPY . .
 
-CMD ["python", "app/main.py"]
+# Create upload directory
+RUN mkdir -p /app/uploads/email_attachments
+
+EXPOSE 8002
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]

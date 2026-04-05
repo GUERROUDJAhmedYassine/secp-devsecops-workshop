@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
 
 @theme {
   --font-mono: "JetBrains Mono", monospace;
@@ -50,14 +50,24 @@
   height: 8px;
 }
 
+
+/* SAME scrollbar in light & dark */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
 ::-webkit-scrollbar-track {
-  @apply bg-page;
+  background: transparent;
+  /* or #0f172a if you want visible track */
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full;
+  background: #2a3148;
+  /* SAME color always */
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted;
+  background: #3a4361;
 }

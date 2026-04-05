@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useThemeContext } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
-import { 
-  ShieldPlus, 
-  User, 
-  Eye, 
-  XCircle, 
-  Globe, 
-  Sun, 
+import {
+  ShieldPlus,
+  User,
+  Eye,
+  XCircle,
+  Globe,
+  Sun,
   Moon,
   LockKeyhole
 } from 'lucide-react';
@@ -27,12 +27,12 @@ export default function Login() {
     e.preventDefault();
     setLocalError(null);
     clearError();
-    
+
     if (!username || !password) {
       setLocalError('Username and password are required');
       return;
     }
-    
+
     try {
       await login({ username, password });
       navigate('/dashboard');
@@ -44,7 +44,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-page text-primary flex flex-col font-mono relative transition-colors duration-200">
-      
+
       {/* Theme Toggle */}
       <div className="absolute top-6 right-6">
         <button
@@ -57,10 +57,10 @@ export default function Login() {
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center p-4">
-        
+
         {/* Main Login Card */}
         <div className="w-full max-w-[420px] bg-card border border-border rounded-lg shadow-sm p-6 sm:p-8 flex flex-col relative z-10 transition-colors duration-200">
-          
+
           {/* Header */}
           <div className="flex flex-col items-center mb-8">
             <div className="flex items-center gap-2 mb-2">
@@ -73,7 +73,7 @@ export default function Login() {
           </div>
 
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            
+
             {/* Username Input Group */}
             <div className="flex flex-col gap-1">
               <div className="relative">
@@ -106,8 +106,8 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
               />
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted hover:text-primary transition-colors"
                 onClick={() => setShowPassword(!showPassword)}
                 disabled={isLoading}
@@ -119,9 +119,9 @@ export default function Login() {
             {/* Error Banners */}
             <div className="flex flex-col gap-2 mt-2">
               {(error || localError) && (
-                <div className="bg-red-50 dark:bg-red-950/30 border-l-[3px] border-red-500 p-3 flex items-center gap-3">
-                  <XCircle size={16} className="text-red-500 shrink-0" />
-                  <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                <div className="bg-red-300 border-l-4 border-red-700 p-3 flex items-center gap-3 rounded-sm">
+                  <XCircle size={16} className="text-red-700 shrink-0" />
+                  <p className="text-xs text-red-700 font-medium">
                     {localError || error}
                   </p>
                 </div>
@@ -132,11 +132,10 @@ export default function Login() {
             <button
               type="submit"
               disabled={isLoading}
-              className={`mt-2 w-full font-medium py-2.5 rounded-md text-sm transition-colors ${
-                isLoading 
-                  ? 'bg-blue-600/50 text-white/70 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
+              className={`mt-2 w-full font-medium py-2.5 rounded-md text-sm transition-colors ${isLoading
+                ? 'bg-blue-600/50 text-white/70 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
             >
               {isLoading ? 'SIGNING IN...' : 'SIGN IN'}
             </button>
@@ -163,7 +162,7 @@ export default function Login() {
             This platform requires an active VPN connection. Contact IT if you cannot connect. System activities
             are logged and subject to monitoring.
           </p>
-          
+
           <div className="flex flex-col gap-3">
             <p className="text-[9px] text-muted uppercase tracking-wider font-semibold">
               © 2024 SECP MONOLITHIC VAULT. ALL RIGHTS RESERVED. HIGH-SECURITY ENVIRONMENT.

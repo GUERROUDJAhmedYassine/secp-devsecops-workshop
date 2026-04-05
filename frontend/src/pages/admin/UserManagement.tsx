@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Bell, MoreVertical, Moon, Sun, Plus, TrendingUp, AlertTriangle, X, Info, Shield, Loader2, Menu, RefreshCw } from 'lucide-react';
+import { Search, Bell, MoreVertical, Moon, Sun, Plus, TrendingUp, AlertTriangle, X, Info, Shield, Loader2, Menu, RefreshCw, Unlock, Trash2, Edit2 } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { Link } from 'react-router-dom';
-import { registerUser, listUsers } from '../../api/admin';
+import { registerUser, listUsers, deleteUser, unlockUser, updateUser } from '../../api/admin';
 import type { User, UserRole } from '../../types/user.types';
 import { useSidebar } from '../../context/SidebarContext';
 /** Derive initials from username (e.g. "ahmed.benali" → "AB") */
@@ -86,6 +86,50 @@ export default function UserManagement() {
     }
   };
 
+  /* ---- Action handlers ---- */
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm("Are you sure you want to delete this user?")) return;
+    try {
+      await deleteUser(userId);
+      fetchUsers();
+    } catch (error: any) {
+      alert("Failed to delete user: " + error.message);
+    }
+  };
+
+  const handleUnlockUser = async (userId: string) => {
+    try {
+      await unlockUser(userId);
+      fetchUsers();
+    } catch (error: any) {
+      alert("Failed to unlock user: " + error.message);
+    }
+  };
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editRole, setEditRole] = useState<UserRole>('EMPLOYEE');
+  const [editDepartment, setEditDepartment] = useState('Engineering');
+
+  const openEditModal = (user: User) => {
+    setEditingUser(user);
+    setEditRole(user.role);
+    setEditDepartment(user.department || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!editingUser) return;
+    try {
+      await updateUser(editingUser.id, { role: editRole, department: editDepartment });
+      setIsEditModalOpen(false);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (error: any) {
+      alert("Failed to update user: " + error.message);
+    }
+  };
+
   /* ---- Derived stats ---- */
   const totalUsers = users.length;
   const activeUsers = users.filter(u => u.is_active).length;
@@ -103,7 +147,7 @@ export default function UserManagement() {
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-page text-primary transition-colors duration-200">
 
       {/* Top Header */}
-      '
+
       <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-card transition-colors duration-200 shrink-0">
         <button onClick={toggleSidebar} className="md:hidden p-2 -ml-2 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
           <Menu className="w-6 h-6" />
@@ -260,14 +304,43 @@ export default function UserManagement() {
                       <td className="px-6 py-4 font-mono text-muted">
                         {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : 'Never'}
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <Link
-                          to={`/admin/users/${user.id}`}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500 hover:text-white transition-all"
-                        >
-                          <Shield size={12} />
-                          Forensics
-                        </Link>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleUnlockUser(user.id)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500 hover:text-white transition-all"
+                            title="Unlock Account"
+                          >
+                            <Unlock size={12} />
+                            Unlock
+                          </button>
+                          <button
+                            onClick={() => openEditModal(user)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500 hover:text-white transition-all"
+                            title="Edit Profile"
+                          >
+                            <Edit2 size={12} />
+                            Edit
+                          </button>
+                          <Link
+                            to={`/admin/users/${user.id}`}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase bg-purple-500/10 text-purple-500 border border-purple-500/20 hover:bg-purple-500 hover:text-white transition-all"
+                            title="Forensics"
+                          >
+                            <Shield size={12} />
+                            Forensics
+                          </Link>
+                          {!user.username.startsWith('deleted_') && (
+                            <button
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all"
+                              title="Delete User"
+                            >
+                              <Trash2 size={12} />
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -402,6 +475,78 @@ export default function UserManagement() {
                 ) : (
                   'Create Identity'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal Overlay */}
+      {isEditModalOpen && editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-card w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-[#1e253c] text-white">
+              <div className="flex items-center gap-2 font-semibold">
+                <Edit2 size={16} />
+                <h3>Edit User Profile</h3>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-slate-300 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 flex flex-col gap-6">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Username</label>
+                <input
+                  type="text"
+                  value={editingUser.username}
+                  readOnly
+                  className="w-full px-3 py-2 bg-page border border-border rounded-md text-sm text-muted bg-opacity-50 cursor-not-allowed"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Access Role</label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 bg-page border border-border rounded-md text-sm focus:outline-none focus:border-blue-500 appearance-none"
+                  >
+                    <option value="EMPLOYEE">EMPLOYEE</option>
+                    <option value="MANAGER">MANAGER</option>
+                    <option value="IT_ADMIN">IT_ADMIN</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Department</label>
+                  <select
+                    value={editDepartment}
+                    onChange={(e) => setEditDepartment(e.target.value)}
+                    className="w-full px-3 py-2 bg-page border border-border rounded-md text-sm focus:outline-none focus:border-blue-500 appearance-none"
+                  >
+                    <option value="Engineering">Engineering</option>
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Security Ops">Security Ops</option>
+                    <option value="Finance">Finance</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 bg-page/30">
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium hover:bg-page rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateProfile}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
+              >
+                Update Profile
               </button>
             </div>
           </div>

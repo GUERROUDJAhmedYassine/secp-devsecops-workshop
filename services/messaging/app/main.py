@@ -1,21 +1,27 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from core.database import db
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manages application startup and teardown routines."""
+    await db.connect()
+    yield
+    await db.disconnect()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(lifespan=lifespan)
+
+from websocket.router import router as websocket_router
+from rooms.router import router as rooms_router
+
+app.include_router(websocket_router)
+app.include_router(rooms_router)
+
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+async def health_check() -> dict:
+    """Basic service health check."""
+    return {"status": "healthy"}
 
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003)
+# Explanation: Creates the FastAPI application instance and manages async database pooling lifecycle.
+# Security note: Centralized lifecycle avoids stale or unprotected database connections on startup and shutdown.

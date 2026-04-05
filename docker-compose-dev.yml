@@ -46,23 +46,27 @@ services:
       start_period: 30s
 
   messaging:
-    build: ./services/messaging
-    ports:
-      - "8003:8003"
-    environment:
-      DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - backend
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8003/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+   build: ./services/messaging
+   ports:
+    - "8003:8003"
+   environment:
+    DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
+    JWT_SECRET: ${JWT_SECRET}
+    JWT_ALGORITHM: HS256
+    ACCESS_TOKEN_EXPIRE_MINUTES: 30
+    SERVICE_NAME: messaging
+   restart: unless-stopped
+   depends_on:
+    db:
+      condition: service_healthy
+   networks:
+    - backend
+   healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 30s
 
   files:
     build: ./services/files

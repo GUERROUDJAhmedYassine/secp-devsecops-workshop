@@ -1,69 +1,43 @@
-# rooms/router.py
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from security.dependencies import get_current_user
-from rooms.membership import require_room_member
-from rooms import service as room_service
-from messages import room_repository
+from messages import dm_repository
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/rooms", tags=["rooms"])
+router = APIRouter(prefix="/dm", tags=["direct_messages"])
 
 
-# ── Request bodies ────────────────────────────────────────────────────────────
-
-class CreateRoomRequest(BaseModel):
-    name: str
-    department: str
-
-
-class JoinRoomRequest(BaseModel):
-    user_id: str
+@router.get("/conversations")
+async def list_conversations(current_user: dict = Depends(get_current_user)):
+    """Get all conversations for current user with latest message snippet."""
+    user_id = str(current_user["id"])
+    return await dm_repository.get_conversation_list(user_id)
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_room(body: CreateRoomRequest, current_user: dict = Depends(get_current_user)):
-    """Create a new room. Restricted to IT_ADMIN role."""
-    if current_user["role"] != "IT_ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only IT_ADMIN can create rooms"
-        )
-
-    result = await room_service.create_room(
-        name=body.name,
-        department=body.department,
-        created_by=str(current_user["id"])
-    )
-    return result
+@router.get("/unread")
+async def get_unread_counts(current_user: dict = Depends(get_current_user)):
+    """Get unread message counts broken down by sender."""
+    user_id = str(current_user["id"])
+    return await dm_repository.get_all_unread_counts(user_id)
 
 
-@router.get("/")
-async def list_rooms(current_user: dict = Depends(get_current_user)):
-    """List all rooms. Available to any authenticated user."""
-    return await room_service.list_rooms()
+@router.post("/read/{sender_id}")
+async def mark_messages_read(sender_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark all messages from a specific sender as read."""
+    user_id = str(current_user["id"])
+    count = await dm_repository.mark_as_read(user_id, sender_id)
+    return {"status": "success", "messages_marked": count}
 
 
-@router.post("/{room_id}/join")
-async def join_room(room_id: str, body: JoinRoomRequest, current_user: dict = Depends(get_current_user)):
-    """Add a user to a room. Restricted to IT_ADMIN role."""
-    if current_user["role"] != "IT_ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only IT_ADMIN can add users to rooms"
-        )
-    return await room_service.join_room(room_id=room_id, user_id=body.user_id)
-
-
-@router.get("/{room_id}/messages")
-async def get_room_messages(
-    room_id: str,
-    current_user: dict = Depends(require_room_member),
-    limit: int = 50
-):
-    """Fetch message history for a room. Restricted to room members only."""
-    return await room_repository.get_room_history(room_id=room_id, limit=limit)
+@router.delete("/{message_id}")
+async def delete_direct_message(message_id: str, current_user: dict = Depends(get_current_user)):
+    """Soft delete a message you sent."""
+    user_id = str(current_user["id"])
+    try:
+        success = await dm_repository.soft_delete_message(message_id, user_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Message not found")
+        return {"status": "success"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))

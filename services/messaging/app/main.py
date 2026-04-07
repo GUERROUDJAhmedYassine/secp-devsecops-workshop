@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from core.database import db
@@ -19,8 +18,12 @@ app = FastAPI(
 )
 
 from rooms.router import router as rooms_router
+from websocket.router import router as websocket_router
+from messages.router import router as messages_router
 
 app.include_router(rooms_router)
+app.include_router(websocket_router)
+app.include_router(messages_router)
 
 
 @app.get("/health")

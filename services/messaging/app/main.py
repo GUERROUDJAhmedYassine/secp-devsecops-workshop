@@ -1,6 +1,8 @@
+# main.py
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from core.database import db
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -9,12 +11,15 @@ async def lifespan(app: FastAPI):
     yield
     await db.disconnect()
 
-app = FastAPI(lifespan=lifespan)
 
-from websocket.router import router as websocket_router
+app = FastAPI(
+    title="SECP Messaging Service",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
 from rooms.router import router as rooms_router
 
-app.include_router(websocket_router)
 app.include_router(rooms_router)
 
 
@@ -24,4 +29,4 @@ async def health_check() -> dict:
     return {"status": "healthy"}
 
 # Explanation: Creates the FastAPI application instance and manages async database pooling lifecycle.
-# Security note: Centralized lifecycle avoids stale or unprotected database connections on startup and shutdown.
+# Note: WebSocket router is included in teammate's main.py — not duplicated here.

@@ -35,7 +35,12 @@ CREATE TABLE app.rooms (
     created_by  UUID         NOT NULL REFERENCES app.users(id),
     created_at  TIMESTAMP    DEFAULT NOW()
 );
-
+CREATE TABLE app.room_members (
+    room_id    UUID      NOT NULL REFERENCES app.rooms(id) ON DELETE CASCADE,
+    user_id    UUID      NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+    joined_at  TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (room_id, user_id)
+);
 CREATE TABLE app.emails (
     id              UUID PRIMARY KEY DEFAULT uuidv7(),
     sender_id       UUID         NOT NULL REFERENCES app.users(id),
@@ -56,13 +61,13 @@ CREATE TABLE app.messages (
     room_id         UUID    NULL     REFERENCES app.rooms(id),
     content         TEXT    NOT NULL,
     is_deleted      BOOLEAN DEFAULT FALSE,
+    is_read BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW(),
     CONSTRAINT chk_message_target CHECK (
         (recipient_id IS NOT NULL AND room_id IS NULL) OR
         (recipient_id IS NULL AND room_id IS NOT NULL)
     )
 );
-
 CREATE TABLE app.files (
     id              UUID PRIMARY KEY DEFAULT uuidv7(),
     owner_id        UUID         NOT NULL REFERENCES app.users(id),

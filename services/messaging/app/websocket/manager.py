@@ -18,3 +18,5 @@ class WebSocketManager:
     async def send_to_user(self, user_id: str, message: dict) -> None:
         """Send message to specific user."""
         pass
+
+manager = WebSocketManager()

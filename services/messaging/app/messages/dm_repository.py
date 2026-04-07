@@ -149,6 +149,44 @@ async def mark_as_read(
             return count
 
 
+async def mark_single_as_read(
+    message_id: str,
+    reader_id: str
+) -> bool:
+    """Mark a specific message as read. Only recipient can mark it."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Verify recipient ownership before updating
+            row = await conn.fetchrow(
+                """
+                SELECT recipient_id FROM app.messages
+                WHERE id = $1::uuid AND is_deleted = FALSE
+                """,
+                message_id
+            )
+
+            if not row:
+                return False
+
+            if str(row["recipient_id"]) != reader_id:
+                logger.warning(f"Read rejected — {reader_id} is not the recipient of {message_id}")
+                raise PermissionError("You can only mark messages sent to you as read")
+
+            result = await conn.execute(
+                """
+                UPDATE app.messages
+                SET is_read = TRUE
+                WHERE id = $1::uuid AND is_read = FALSE
+                """,
+                message_id
+            )
+            updated = "1" in result
+            if updated:
+                logger.info(f"Message {message_id} marked as read by {reader_id}")
+            return updated
+
+
 async def soft_delete_message(
     message_id: str,
     user_id: str

@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 from fastapi import WebSocket
-from messages.dm_repository import save_dm, get_dm_history
+from messages.dm_repository import save_dm, get_dm_history, mark_as_read, mark_single_as_read
 from siem.emitter import emit
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ async def handle_message(websocket: WebSocket, user_id: str, data: dict) -> None
         "room": handle_room,
         "history": handle_history,
         "ping": handle_ping,
+        "read": handle_read,
     }
 
     handler = handlers.get(message_type)
@@ -79,6 +80,82 @@ async def handle_ping(websocket: WebSocket, user_id: str, data: dict) -> None:
         "type": "pong",
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
+
+
+async def handle_read(websocket: WebSocket, user_id: str, data: dict) -> None:
+    """
+    Mark a DM as read and notify the original sender in real-time.
+
+    Expected client payload:
+        {
+            "type": "read",
+            "message_id": "<uuid>",
+            "from": "<sender_user_id>"   # who sent the message being marked read
+        }
+    """
+    message_id = data.get("message_id", "").strip()
+    sender_id = data.get("from", "").strip()
+
+    # --- Validate ---
+    if not message_id:
+        await _send_error(websocket, "read requires 'message_id' field", 400)
+        return
+    if not sender_id:
+        await _send_error(websocket, "read requires 'from' field", 400)
+        return
+    if sender_id == user_id:
+        await _send_error(websocket, "Cannot mark your own message as read", 400)
+        return
+
+    # --- Persist ---
+    try:
+        updated = await mark_single_as_read(message_id=message_id, reader_id=user_id)
+        if not updated:
+            # Message might already be read or doesn't exist – still acknowledge to avoid client retry
+            await websocket.send_json({
+                "type": "read_ack",
+                "message_id": message_id,
+                "status": "already_read"
+            })
+            return
+    except PermissionError as e:
+        await _send_error(websocket, str(e), 403)
+        return
+    except Exception as e:
+        logger.error(f"mark_single_as_read failed — message {message_id}, reader {user_id}: {e}")
+        await _send_error(websocket, "Failed to mark message as read", 500)
+        return
+
+    read_at = datetime.now(timezone.utc).isoformat()
+
+    # --- Notify sender in real-time ---
+    from websocket.manager import send_to_user
+    await send_to_user(sender_id, {
+        "type": "message_read",
+        "message_id": message_id,
+        "by": user_id,
+        "timestamp": read_at,
+    })
+
+    # --- Ack to reader (useful for multi-device sync) ---
+    await websocket.send_json({
+        "type": "read_ack",
+        "message_id": message_id,
+        "timestamp": read_at,
+        "status": "success"
+    })
+
+    # --- SIEM ---
+    await emit(
+        event_type="MESSAGE_READ",
+        severity="INFO",
+        service="messaging",
+        user_id=user_id,
+        source_ip=None,
+        payload={"message_id": message_id, "sender_id": sender_id},
+    )
+
+    logger.info(f"Message {message_id} marked read by {user_id} (sender: {sender_id})")
 
 
 async def handle_dm(websocket: WebSocket, user_id: str, data: dict) -> None:

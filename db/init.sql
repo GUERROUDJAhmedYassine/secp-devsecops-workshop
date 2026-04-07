@@ -56,6 +56,7 @@ CREATE TABLE app.messages (
     room_id         UUID    NULL     REFERENCES app.rooms(id),
     content         TEXT    NOT NULL,
     is_deleted      BOOLEAN DEFAULT FALSE,
+    is_read BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW(),
     CONSTRAINT chk_message_target CHECK (
         (recipient_id IS NOT NULL AND room_id IS NULL) OR

@@ -1,8 +1,9 @@
-
 fastapi
 uvicorn
-python-multipart
-sqlalchemy
-psycopg2-binary
+asyncpg
+pyjwt
+python-dotenv
+bcrypt
 pydantic-settings
 websockets
+python-multipart

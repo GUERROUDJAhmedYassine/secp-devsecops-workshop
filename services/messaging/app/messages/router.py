@@ -21,6 +21,22 @@ async def get_unread_counts(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["id"])
     return await dm_repository.get_all_unread_counts(user_id)
 
+@router.get("/history/{other_user_id}")
+async def get_dm_history(
+    other_user_id: str,
+    current_user: dict = Depends(get_current_user),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Fetch DM history with another user (stable REST alternative to WS history)."""
+    user_id = str(current_user["id"])
+    return await dm_repository.get_dm_history(
+        user1_id=user_id,
+        user2_id=other_user_id,
+        limit=limit,
+        offset=offset,
+    )
+
 
 @router.post("/read/{sender_id}")
 async def mark_messages_read(sender_id: str, current_user: dict = Depends(get_current_user)):

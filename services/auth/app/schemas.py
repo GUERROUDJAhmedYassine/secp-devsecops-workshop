@@ -102,6 +102,24 @@ class UserResponse(BaseModel):
         )
 
 
+class PublicUserResponse(BaseModel):
+    """Minimal directory view for messaging (no PII)."""
+    id: str
+    username: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def build(cls, user):
+        return cls(
+            id=str(user.id),
+            username=user.username,
+            is_active=user.is_active,
+        )
+
+
 class UserSuspend(BaseModel):
     user_id: str
 

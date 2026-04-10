@@ -44,19 +44,43 @@ async def create_room(body: CreateRoomRequest, current_user: dict = Depends(get_
 
 @router.get("/")
 async def list_rooms(current_user: dict = Depends(get_current_user)):
-    """List all rooms. Available to any authenticated user."""
-    return await room_service.list_rooms()
+    """List rooms the current user is a member of."""
+    return await room_service.list_rooms_for_user(str(current_user["id"]))
 
 
 @router.post("/{room_id}/join")
-async def join_room(room_id: str, body: JoinRoomRequest, current_user: dict = Depends(get_current_user)):
-    """Add a user to a room. Restricted to IT_ADMIN role."""
-    if current_user["role"] != "IT_ADMIN":
+async def join_room(room_id: str, body: JoinRoomRequest, current_user: dict = Depends(require_room_member)):
+    """Add a user to a room. Restricted to IT_ADMIN and MANAGER roles."""
+    if current_user["role"] not in ("IT_ADMIN", "MANAGER"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only IT_ADMIN can add users to rooms"
+            detail="Only IT_ADMIN or MANAGER can add users to rooms"
         )
     return await room_service.join_room(room_id=room_id, user_id=body.user_id)
+
+
+@router.get("/{room_id}/members")
+async def list_room_members(
+    room_id: str,
+    current_user: dict = Depends(require_room_member),
+):
+    """List room members (user_id strings). Restricted to room members."""
+    return {"room_id": room_id, "members": await room_service.get_room_members(room_id)}
+
+
+@router.delete("/{room_id}/members/{user_id}")
+async def remove_room_member(
+    room_id: str,
+    user_id: str,
+    current_user: dict = Depends(require_room_member),
+):
+    """Remove a user from a room. Restricted to IT_ADMIN and MANAGER roles."""
+    if current_user["role"] not in ("IT_ADMIN", "MANAGER"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only IT_ADMIN or MANAGER can remove users from rooms"
+        )
+    return await room_service.remove_user_from_room(room_id=room_id, user_id=user_id)
 
 
 @router.get("/{room_id}/messages")

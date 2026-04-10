@@ -14,10 +14,11 @@ async def handle_room_message(room_id: str, sender_id: str, content: str):
     Called by websocket/handler.py when a 'room' type message is received.
     Validates membership, saves the message, and broadcasts to all room members.
     """
-    from websocket.manager import manager  # lazy import — teammate's code
+    # websocket/manager.py exports send_to_user(), not a "manager" object
+    from websocket.manager import send_to_user  # lazy import to avoid circular imports
     # --- membership check ---
     if not await is_room_member(room_id, sender_id):
-        await manager.send_to_user(sender_id, {
+        await send_to_user(sender_id, {
             "type": "error",
             "code": 403,
             "detail": "Not a member of this room"
@@ -48,7 +49,7 @@ async def handle_room_message(room_id: str, sender_id: str, content: str):
     # --- broadcast to every room member ---
     members = await get_room_members(room_id)
     for member_id in members:
-        await manager.send_to_user(member_id, message_dict)
+        await send_to_user(member_id, message_dict)
 
     # --- rate-limit / SIEM stub ---
     recent_count = await room_repository.count_recent_messages(sender_id, seconds=60)
@@ -108,18 +109,22 @@ async def join_room(room_id: str, user_id: str) -> dict:
     return {"room_id": room_id, "user_id": user_id, "status": "joined"}
 
 
-async def list_rooms() -> list[dict]:
-    """Fetch all rooms."""
+async def list_rooms_for_user(user_id: str) -> list[dict]:
+    """Fetch rooms that the user is a member of."""
     pool = get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, name, department, created_by, created_at
-            FROM app.rooms
-            ORDER BY created_at DESC
+            SELECT r.id, r.name, r.department, r.created_by, r.created_at
+            FROM app.rooms r
+            JOIN app.room_members rm ON rm.room_id = r.id
+            WHERE rm.user_id = $1::uuid
+            ORDER BY r.created_at DESC
             """
+            ,
+            user_id
         )
-    logger.debug("Listed %d rooms", len(rows))
+    logger.debug("Listed %d rooms for user=%s", len(rows), user_id)
     return [
         {
             "id": str(r["id"]),
@@ -142,3 +147,26 @@ async def get_room_members(room_id: str) -> list[str]:
         )
     logger.debug("Room %s has %d members", room_id, len(rows))
     return [str(r["user_id"]) for r in rows]
+
+
+async def remove_user_from_room(room_id: str, user_id: str) -> dict:
+    """Remove a user from a room. Returns a status payload."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            result = await conn.execute(
+                """
+                DELETE FROM app.room_members
+                WHERE room_id = $1::uuid AND user_id = $2::uuid
+                """,
+                room_id, user_id
+            )
+    # asyncpg returns strings like "DELETE 1"
+    removed = int(result.split()[-1]) if isinstance(result, str) else 0
+    if removed == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User is not a member of this room"
+        )
+    logger.info("User %s removed from room %s", user_id, room_id)
+    return {"room_id": room_id, "user_id": user_id, "status": "removed"}

@@ -14,6 +14,8 @@ import type {
   PasswordChangePayload,
 } from '../types/user.types';
 
+// NOTE: messaging directory is intentionally minimal (no PII)
+
 /**
  * Authenticate a user. Returns tokens and stores them.
  * Uses form-urlencoded body for FastAPI OAuth2PasswordRequestForm.
@@ -74,4 +76,11 @@ export async function getMe(): Promise<User> {
 /** Change the current user's password. */
 export async function changePassword(payload: PasswordChangePayload): Promise<void> {
   await apiPut(`${AUTH_BASE}/auth/password`, payload);
+}
+
+/** Public user directory for DM user picker (any authenticated user). */
+export type DirectoryUser = { id: string; username: string; is_active: boolean };
+
+export async function listDirectoryUsers(): Promise<DirectoryUser[]> {
+  return apiGet<DirectoryUser[]>(`${AUTH_BASE}/auth/users`);
 }

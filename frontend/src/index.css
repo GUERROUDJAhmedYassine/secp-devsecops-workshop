@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
+
+@theme {
+  --font-mono: "JetBrains Mono", monospace;
+  --color-page: var(--bg-page);
+  --color-sidebar: var(--bg-sidebar);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-card: var(--bg-card);
+  --color-border: var(--border-color);
+  --color-primary: var(--text-primary);
+  --color-muted: var(--text-muted);
+}
+
+@layer base {
+  :root {
+    --bg-page: #f8fafc;
+    --bg-sidebar: #161b27;
+    --sidebar-border: #2a3148;
+    --sidebar-text: #e2e8f0;
+    --sidebar-muted: #8892a4;
+    --bg-card: #ffffff;
+    --border-color: #e2e8f0;
+    --text-primary: #0f172a;
+    --text-muted: #64748b;
+  }
+
+  .dark {
+    --bg-page: #0f1117;
+    --bg-sidebar: #161b27;
+    --sidebar-border: #2a3148;
+    --sidebar-text: #e2e8f0;
+    --sidebar-muted: #8892a4;
+    --bg-card: #1a2035;
+    --border-color: #2a3148;
+    --text-primary: #e2e8f0;
+    --text-muted: #8892a4;
+  }
+
+  body {
+    @apply font-mono bg-page text-primary antialiased transition-colors duration-200;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+
+/* SAME scrollbar in light & dark */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  /* or #0f172a if you want visible track */
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a3148;
+  /* SAME color always */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4361;
+}

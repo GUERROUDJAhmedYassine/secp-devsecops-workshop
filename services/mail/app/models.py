@@ -5,7 +5,7 @@ These models do NOT create tables — init.sql does that.
 """
 from sqlalchemy import (
     Column, String, Boolean, DateTime, Text,
-    ForeignKey, BigInteger
+    ForeignKey
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -40,11 +40,6 @@ class Email(Base):
     body            = Column(Text,         nullable=True)
     has_attachment  = Column(Boolean,      default=False, nullable=False)
     attachment_path = Column(Text,         nullable=True)
-
-    # FIX: store bytes as integer, not human-readable string.
-    # Human-readable format (e.g. "10.5 MB") is generated in the response schema,
-    # not stored in the database. Storing as string prevents filtering by size.
-    attachment_size_bytes = Column(BigInteger, nullable=True)
 
     is_read    = Column(Boolean,   default=False,           nullable=False)
     is_deleted = Column(Boolean,   default=False,           nullable=False)

@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+asyncpg
+pyjwt
+python-dotenv
+bcrypt
+pydantic-settings
+websockets
+python-multipart

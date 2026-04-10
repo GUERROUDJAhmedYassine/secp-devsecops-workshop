@@ -45,6 +45,7 @@ def siem_emit(
         )
         db.commit()
     except Exception as e:
+        db.rollback()
         # Log to stdout — visible in docker compose logs
         print(f"[SIEM][mail] Failed to emit {event_type}: {e}")
 

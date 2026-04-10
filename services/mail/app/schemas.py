@@ -64,6 +64,7 @@ class EmailResponse(BaseModel):
     subject:            str
     body:               str
     has_attachment:     bool
+    attachment_name:    Optional[str]
     attachment_size:    Optional[str]   # human-readable, generated from bytes
     is_read:            bool
     sent_at:            datetime

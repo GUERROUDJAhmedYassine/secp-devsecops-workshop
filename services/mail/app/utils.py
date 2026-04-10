@@ -13,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
 
-from config import MAILHOG_HOST, MAILHOG_PORT, ALLOWED_DOMAINS
+from config import ALLOWED_DOMAINS, MAILHOG_HOST, MAILHOG_PORT, MAIL_UPLOAD_DIR
 
 
 # ── Domain Validation ────────────────────────────────────────────────────────
@@ -43,6 +43,12 @@ def sanitize_filename(filename: str) -> str:
         name, ext = os.path.splitext(filename)
         filename = name[:250] + ext
     return filename or "attachment"
+
+
+def attachment_display_name(file_path: str) -> str:
+    """Recover the user-facing filename from a stored attachment path."""
+    filename = os.path.basename(file_path)
+    return filename.split("_", 1)[1] if "_" in filename else filename
 
 
 # ── Suspicious Content Detection ─────────────────────────────────────────────
@@ -93,7 +99,7 @@ async def forward_to_mailhog(
                 part = MIMEBase('application', 'octet-stream')
                 part.set_payload(f.read())
             encoders.encode_base64(part)
-            filename = os.path.basename(attachment_path)
+            filename = attachment_display_name(attachment_path)
             part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
             msg.attach(part)
 
@@ -116,11 +122,10 @@ def save_attachment(content: bytes, original_filename: str) -> str:
     Returns the full path where the file was saved.
     The filename is sanitized and prefixed with a UUID to avoid collisions.
     """
-    upload_dir = "/app/uploads/email_attachments"
-    os.makedirs(upload_dir, exist_ok=True)
+    os.makedirs(MAIL_UPLOAD_DIR, exist_ok=True)
 
     safe_name = sanitize_filename(original_filename)
-    file_path = os.path.join(upload_dir, f"{uuid.uuid4()}_{safe_name}")
+    file_path = os.path.join(MAIL_UPLOAD_DIR, f"{uuid.uuid4()}_{safe_name}")
 
     with open(file_path, "wb") as f:
         f.write(content)

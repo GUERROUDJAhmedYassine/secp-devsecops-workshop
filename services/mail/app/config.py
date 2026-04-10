@@ -17,6 +17,7 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 # ── Mail ─────────────────────────────────────────
 MAILHOG_HOST = os.getenv("MAILHOG_HOST", "mailhog")
 MAILHOG_PORT = int(os.getenv("MAILHOG_PORT", "1025"))
+MAIL_UPLOAD_DIR = os.getenv("MAIL_UPLOAD_DIR", "/app/uploads/email_attachments")
 # Auth bootstrap uses @secp.com; report uses @company.dz — allow both unless overridden
 _raw_domains = os.getenv("ALLOWED_EMAIL_DOMAINS", "company.dz,secp.com")
 ALLOWED_DOMAINS = [d.strip().lower() for d in _raw_domains.split(",") if d.strip()]

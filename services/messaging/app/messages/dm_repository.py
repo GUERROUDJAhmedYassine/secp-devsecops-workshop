@@ -238,9 +238,12 @@ async def get_conversation_list(user_id: str) -> list[dict]:
                 content,
                 created_at,
                 is_read,
+                is_deleted,
                 sender_id
             FROM app.messages
             WHERE (sender_id = $1::uuid OR recipient_id = $1::uuid)
+              AND recipient_id IS NOT NULL
+              AND room_id IS NULL
               AND is_deleted = FALSE
             ORDER BY other_user, created_at DESC
             """,

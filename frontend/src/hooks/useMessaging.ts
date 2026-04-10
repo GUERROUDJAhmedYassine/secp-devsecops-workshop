@@ -12,16 +12,16 @@ import {
 } from '../api/messaging';
 import type {
   Room,
-  Message,
-  WebSocketPayload,
-  WsSendPayload,
+  RoomMessage,
+  MessagingWsInbound,
+  MessagingWsOutbound,
 } from '../types/messaging.types';
 import { useAuth } from './useAuth';
 
 export function useMessaging(activeRoomId: string | null) {
   const { isAuthenticated } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const wsRef = useRef<WsManager | null>(null);
@@ -50,23 +50,30 @@ export function useMessaging(activeRoomId: string | null) {
     if (!isAuthenticated) return;
 
     const ws = createMessagingSocket((raw: unknown) => {
-      const payload = raw as WebSocketPayload;
+      const payload = raw as MessagingWsInbound;
 
       switch (payload.type) {
         case 'message':
-          setMessages((prev) => [...prev, payload.data]);
-          /* bump the room's last_message_at */
+          // room broadcast
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: payload.message_id,
+              room_id: payload.room_id,
+              sender_id: payload.from,
+              sender_username: payload.from,
+              content: payload.content,
+              timestamp: payload.timestamp,
+              created_at: payload.timestamp,
+            },
+          ]);
           setRooms((prev) =>
             prev.map((r) =>
-              r.id === payload.data.room_id
-                ? { ...r, last_message_at: payload.data.timestamp }
+              r.id === payload.room_id
+                ? { ...r, last_message_at: payload.timestamp }
                 : r,
             ),
           );
-          break;
-
-        case 'room_created':
-          setRooms((prev) => [...prev, payload.data]);
           break;
 
         default:
@@ -88,27 +95,11 @@ export function useMessaging(activeRoomId: string | null) {
   /* ---- send helper ---- */
   const sendMessage = useCallback(
     (roomId: string, content: string) => {
-      const payload: WsSendPayload = {
-        type: 'send_message',
-        room_id: roomId,
-        content,
-      };
+      const payload: MessagingWsOutbound = { type: 'room', room_id: roomId, content };
       wsRef.current?.send(payload);
     },
     [],
   );
-
-  /** Join a room via WebSocket. */
-  const joinRoom = useCallback((roomId: string) => {
-    const payload: WsSendPayload = { type: 'join_room', room_id: roomId };
-    wsRef.current?.send(payload);
-  }, []);
-
-  /** Notify others that the user is typing. */
-  const sendTyping = useCallback((roomId: string) => {
-    const payload: WsSendPayload = { type: 'typing', room_id: roomId };
-    wsRef.current?.send(payload);
-  }, []);
 
   return {
     rooms,
@@ -116,7 +107,5 @@ export function useMessaging(activeRoomId: string | null) {
     connected,
     loading,
     sendMessage,
-    joinRoom,
-    sendTyping,
   };
 }

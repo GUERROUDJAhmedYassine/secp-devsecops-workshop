@@ -12,9 +12,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/users", response_model=list[UserResponse])
 def list_users(
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_role(["IT_ADMIN"])),
+    _user: User = Depends(require_role(["IT_ADMIN", "MANAGER"])),
 ):
-    """List all user accounts. IT_ADMIN only."""
+    """List all user accounts. IT_ADMIN and MANAGER."""
     return [UserResponse.build(u) for u in crud.get_all_users(db)]
 
 @router.get("/users/{user_id}", response_model=UserResponse)

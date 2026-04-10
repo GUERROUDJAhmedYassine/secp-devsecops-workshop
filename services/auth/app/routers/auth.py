@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, Request,status
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User
-from schemas import UserCreate, UserLogin, PasswordChange, TokenResponse, UserResponse
+from schemas import UserCreate, UserLogin, PasswordChange, TokenResponse, UserResponse, PublicUserResponse
 from dependencies import get_current_user, require_role
 from services import auth_service, user_service
+import crud
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -50,6 +51,15 @@ def logout(
 def get_me(current_user: User = Depends(get_current_user)):
     """Return the current user's profile."""
     return UserResponse.build(current_user)
+
+
+@router.get("/users", response_model=list[PublicUserResponse])
+def list_public_users(
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    """Public user directory for authenticated users (used by DM UI)."""
+    return [PublicUserResponse.build(u) for u in crud.get_all_users(db) if u.is_active]
 
 @router.put("/password")
 def change_password(

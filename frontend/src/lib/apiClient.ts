@@ -11,10 +11,10 @@ export interface ApiRequestInit extends RequestInit {
   skipAuth?: boolean;
 }
 
-async function request<T = unknown>(
+async function sendRequest(
   url: string,
   init: ApiRequestInit = {},
-): Promise<T> {
+): Promise<Response> {
   const { skipAuth, headers: extraHeaders, ...rest } = init;
 
   const headers = new Headers(extraHeaders);
@@ -56,6 +56,15 @@ async function request<T = unknown>(
       res.statusText;
     throw new Error(msg);
   }
+
+  return res;
+}
+
+async function request<T = unknown>(
+  url: string,
+  init: ApiRequestInit = {},
+): Promise<T> {
+  const res = await sendRequest(url, init);
 
   /* 204 No Content */
   if (res.status === 204) return undefined as unknown as T;
@@ -106,4 +115,8 @@ export function apiPatch<T = unknown>(
 
 export function apiDelete<T = unknown>(url: string, init?: ApiRequestInit) {
   return request<T>(url, { ...init, method: 'DELETE' });
+}
+
+export function apiGetBlob(url: string, init?: ApiRequestInit) {
+  return sendRequest(url, { ...init, method: 'GET' });
 }

@@ -23,8 +23,8 @@ import {
 } from '../api/messaging';
 import { listUsers } from '../api/admin';
 import type { Room, RoomMessage, DirectMessage, DmConversation, UnreadCount, MessagingWsInbound, MessagingWsOutbound } from '../types/messaging.types';
-import type { User } from '../types/user.types';
-import { listDirectoryUsers, type DirectoryUser } from '../api/auth';
+import { listDirectoryUsers } from '../api/auth';
+import type { User, DirectoryUser } from '../types/user.types';
 import type { WsManager } from '../lib/websocket';
 
 function ModalShell({
@@ -357,10 +357,10 @@ export default function Messaging() {
               prev.map((m) =>
                 m.id === localId
                   ? {
-                      ...m,
-                      id: msg.message_id,
-                      created_at: msg.timestamp,
-                    }
+                    ...m,
+                    id: msg.message_id,
+                    created_at: msg.timestamp,
+                  }
                   : m,
               ),
             );
@@ -663,9 +663,9 @@ export default function Messaging() {
           <div className="flex items-center">
             <h1 className="text-base font-bold text-primary hidden sm:block">Security Operations</h1>
             <div className="hidden sm:block h-4 w-px bg-border mx-4"></div>
-          <span className="text-xs sm:text-sm font-medium text-muted">
-            Communications <span className="mx-1">&gt;</span> <span className="text-[#4f8ef7]">Internal Comms</span>
-          </span>
+            <span className="text-xs sm:text-sm font-medium text-muted">
+              Communications <span className="mx-1">&gt;</span> <span className="text-[#4f8ef7]">Internal Comms</span>
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
@@ -798,11 +798,10 @@ export default function Messaging() {
                       });
                     }
                   }}
-                  className={`w-full flex items-start gap-4 px-6 py-3 transition-colors border-l-2 ${
-                    active
+                  className={`w-full flex items-start gap-4 px-6 py-3 transition-colors border-l-2 ${active
                       ? 'bg-[#4f8ef7]/5 border-l-[#4f8ef7]'
                       : 'border-l-transparent hover:bg-card hover:border-l-border text-muted hover:text-primary'
-                  }`}
+                    }`}
                 >
                   <div className="relative w-8 h-8 rounded-full bg-card text-muted flex items-center justify-center text-xs font-bold flex-shrink-0 border border-border">
                     {displayName.slice(0, 2).toUpperCase()}
@@ -833,8 +832,8 @@ export default function Messaging() {
           {/* Chat Header */}
           <div className="px-3 sm:px-6 flex items-center justify-between border-b border-border bg-page transition-colors flex-shrink-0 h-20">
             <div className="flex items-center gap-2 sm:gap-4">
-              <button 
-                onClick={() => setSelectedRoomId(null)} 
+              <button
+                onClick={() => setSelectedRoomId(null)}
                 className="md:hidden flex items-center justify-center p-2 -ml-2 text-muted hover:text-primary hover:bg-card rounded-md transition-colors mr-1 cursor-pointer"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -898,142 +897,142 @@ export default function Messaging() {
               className={`flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-6 ${detailsOpen ? 'border-r border-border' : ''}`}
             >
 
-            {activeKind === 'room' && messagesLoading && (
-              <div className="text-xs font-medium text-muted">Loading messages…</div>
-            )}
+              {activeKind === 'room' && messagesLoading && (
+                <div className="text-xs font-medium text-muted">Loading messages…</div>
+              )}
 
-            {activeKind === 'room' && !messagesLoading && roomMessages.length === 0 && (
-              <div className="text-xs font-medium text-muted">No messages yet.</div>
-            )}
+              {activeKind === 'room' && !messagesLoading && roomMessages.length === 0 && (
+                <div className="text-xs font-medium text-muted">No messages yet.</div>
+              )}
 
-            {activeKind === 'room' && roomMessages
-              .filter((m) => (m as any).is_deleted !== true && m.content !== '[deleted]')
-              .map((msg, idx, arr) => {
-              const dateKey = toDateKey(msg.created_at ?? msg.timestamp);
-              const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at ?? arr[idx - 1]?.timestamp) : null;
-              const showDivider = idx === 0 || dateKey !== prevKey;
-              const isSelf = !!user && msg.sender_id === user.id;
-              const senderLabel = msg.username ?? msg.sender_username ?? msg.sender_id;
+              {activeKind === 'room' && roomMessages
+                .filter((m) => (m as any).is_deleted !== true && m.content !== '[deleted]')
+                .map((msg, idx, arr) => {
+                  const dateKey = toDateKey(msg.created_at ?? msg.timestamp);
+                  const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at ?? arr[idx - 1]?.timestamp) : null;
+                  const showDivider = idx === 0 || dateKey !== prevKey;
+                  const isSelf = !!user && msg.sender_id === user.id;
+                  const senderLabel = msg.username ?? msg.sender_username ?? msg.sender_id;
 
-              if ((msg as any).isSystemAlert) {
-                return (
-                  <div key={msg.id} className="flex justify-center my-2">
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{msg.content}</span>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (isSelf) {
-                return (
-                  <div key={msg.id} className="flex flex-col items-end gap-1 ml-auto max-w-2xl">
-                    {showDivider && (
-                      <div className="flex items-center justify-center my-4 w-full">
-                        <div className="h-px bg-border flex-1"></div>
-                        <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
-                          {formatDayLabel(dateKey)}
-                        </span>
-                        <div className="h-px bg-border flex-1"></div>
+                  if ((msg as any).isSystemAlert) {
+                    return (
+                      <div key={msg.id} className="flex justify-center my-2">
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest">{msg.content}</span>
+                        </div>
                       </div>
-                    )}
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-xs font-medium text-muted">
-                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
-                      </span>
-                      <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                    </div>
-                    <div className="bg-[#4f8ef7] text-white p-4 rounded-2xl rounded-tr-sm shadow-md text-sm leading-relaxed">
-                      {msg.content}
-                    </div>
-                  </div>
-                );
-              }
+                    );
+                  }
 
-              return (
-                <div key={msg.id} className="flex flex-col gap-2 max-w-2xl">
-                  {showDivider && (
-                    <div className="flex items-center justify-center my-4 w-full">
-                      <div className="h-px bg-border flex-1"></div>
-                      <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
-                        {formatDayLabel(dateKey)}
-                      </span>
-                      <div className="h-px bg-border flex-1"></div>
-                    </div>
-                  )}
-                  <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-card text-muted flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1 shadow-sm border border-border">
-                    {senderLabel.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="flex flex-col gap-1 items-start">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                      <span className="text-xs font-medium text-muted">
-                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
-                      </span>
-                    </div>
-                    <div className="bg-card border border-border text-primary p-4 rounded-2xl rounded-tl-sm shadow-sm text-sm leading-relaxed">
-                      {msg.content}
-                    </div>
-                  </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {activeKind === 'dm' && dmLoading && (
-              <div className="text-xs font-medium text-muted">Loading conversation…</div>
-            )}
-
-            {activeKind === 'dm' && !dmLoading && dmMessages.length === 0 && (
-              <div className="text-xs font-medium text-muted">No direct messages yet.</div>
-            )}
-
-            {activeKind === 'dm' && dmMessages
-              .filter((m) => m.is_deleted !== true && m.content !== '[deleted]')
-              .map((msg, idx, arr) => {
-              const dateKey = toDateKey(msg.created_at);
-              const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at) : null;
-              const showDivider = idx === 0 || dateKey !== prevKey;
-              const isSelf = !!user && msg.sender_id === user.id;
-              const other = selectedDmUserId ? directoryMap.get(selectedDmUserId) : undefined;
-              const senderLabel = isSelf ? (user?.username ?? 'Me') : (other?.username ?? activeDm?.other_user ?? msg.sender_id);
-              const showSeen =
-                isSelf &&
-                msg.id === lastSelfDmMessageId &&
-                msg.is_read === true;
-              return (
-                <div key={msg.id} className="flex flex-col gap-2">
-                  {showDivider && (
-                    <div className="flex items-center justify-center my-4 w-full">
-                      <div className="h-px bg-border flex-1"></div>
-                      <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
-                        {formatDayLabel(dateKey)}
-                      </span>
-                      <div className="h-px bg-border flex-1"></div>
-                    </div>
-                  )}
-
-                  <div className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-2xl ${isSelf ? 'text-right' : 'text-left'}`}>
-                      <div className="flex items-center gap-2 mb-1 justify-between">
-                        <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                        <span className="text-xs font-medium text-muted">{new Date(msg.created_at).toLocaleTimeString()}</span>
+                  if (isSelf) {
+                    return (
+                      <div key={msg.id} className="flex flex-col items-end gap-1 ml-auto max-w-2xl">
+                        {showDivider && (
+                          <div className="flex items-center justify-center my-4 w-full">
+                            <div className="h-px bg-border flex-1"></div>
+                            <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
+                              {formatDayLabel(dateKey)}
+                            </span>
+                            <div className="h-px bg-border flex-1"></div>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-xs font-medium text-muted">
+                            {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
+                          </span>
+                          <span className="text-sm font-bold text-primary">{senderLabel}</span>
+                        </div>
+                        <div className="bg-[#4f8ef7] text-white p-4 rounded-2xl rounded-tr-sm shadow-md text-sm leading-relaxed">
+                          {msg.content}
+                        </div>
                       </div>
-                      <div className={`${isSelf ? 'bg-[#4f8ef7] text-white' : 'bg-card border border-border text-primary'} p-4 rounded-2xl shadow-sm text-sm leading-relaxed`}>
-                        {msg.content}
-                      </div>
-                      {showSeen && (
-                        <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted">
-                          Seen
+                    );
+                  }
+
+                  return (
+                    <div key={msg.id} className="flex flex-col gap-2 max-w-2xl">
+                      {showDivider && (
+                        <div className="flex items-center justify-center my-4 w-full">
+                          <div className="h-px bg-border flex-1"></div>
+                          <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
+                            {formatDayLabel(dateKey)}
+                          </span>
+                          <div className="h-px bg-border flex-1"></div>
                         </div>
                       )}
+                      <div className="flex items-start gap-4">
+                        <div className="w-8 h-8 rounded-full bg-card text-muted flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1 shadow-sm border border-border">
+                          {senderLabel.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col gap-1 items-start">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-sm font-bold text-primary">{senderLabel}</span>
+                            <span className="text-xs font-medium text-muted">
+                              {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
+                            </span>
+                          </div>
+                          <div className="bg-card border border-border text-primary p-4 rounded-2xl rounded-tl-sm shadow-sm text-sm leading-relaxed">
+                            {msg.content}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+
+              {activeKind === 'dm' && dmLoading && (
+                <div className="text-xs font-medium text-muted">Loading conversation…</div>
+              )}
+
+              {activeKind === 'dm' && !dmLoading && dmMessages.length === 0 && (
+                <div className="text-xs font-medium text-muted">No direct messages yet.</div>
+              )}
+
+              {activeKind === 'dm' && dmMessages
+                .filter((m) => m.is_deleted !== true && m.content !== '[deleted]')
+                .map((msg, idx, arr) => {
+                  const dateKey = toDateKey(msg.created_at);
+                  const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at) : null;
+                  const showDivider = idx === 0 || dateKey !== prevKey;
+                  const isSelf = !!user && msg.sender_id === user.id;
+                  const other = selectedDmUserId ? directoryMap.get(selectedDmUserId) : undefined;
+                  const senderLabel = isSelf ? (user?.username ?? 'Me') : (other?.username ?? activeDm?.other_user ?? msg.sender_id);
+                  const showSeen =
+                    isSelf &&
+                    msg.id === lastSelfDmMessageId &&
+                    msg.is_read === true;
+                  return (
+                    <div key={msg.id} className="flex flex-col gap-2">
+                      {showDivider && (
+                        <div className="flex items-center justify-center my-4 w-full">
+                          <div className="h-px bg-border flex-1"></div>
+                          <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
+                            {formatDayLabel(dateKey)}
+                          </span>
+                          <div className="h-px bg-border flex-1"></div>
+                        </div>
+                      )}
+
+                      <div className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-2xl ${isSelf ? 'text-right' : 'text-left'}`}>
+                          <div className="flex items-center gap-2 mb-1 justify-between">
+                            <span className="text-sm font-bold text-primary">{senderLabel}</span>
+                            <span className="text-xs font-medium text-muted">{new Date(msg.created_at).toLocaleTimeString()}</span>
+                          </div>
+                          <div className={`${isSelf ? 'bg-[#4f8ef7] text-white' : 'bg-card border border-border text-primary'} p-4 rounded-2xl shadow-sm text-sm leading-relaxed`}>
+                            {msg.content}
+                          </div>
+                          {showSeen && (
+                            <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted">
+                              Seen
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
 
             {/* Inline details panel (no popup) */}

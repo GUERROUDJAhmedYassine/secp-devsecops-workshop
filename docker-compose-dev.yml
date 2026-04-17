@@ -76,6 +76,8 @@ services:
       - ./uploads:/app/uploads
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
     restart: unless-stopped
     depends_on:
       db:

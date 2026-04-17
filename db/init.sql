@@ -1,4 +1,3 @@
-
 CREATE SCHEMA app;
 CREATE SCHEMA siem;
 

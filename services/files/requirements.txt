@@ -1,8 +1,5 @@
-
-fastapi
-uvicorn
-python-multipart
-sqlalchemy
-psycopg2-binary
-pydantic-settings
-websockets
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+asyncpg==0.29.0
+PyJWT==2.9.0
+python-multipart==0.0.12

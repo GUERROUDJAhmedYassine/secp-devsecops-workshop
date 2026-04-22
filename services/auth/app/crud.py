@@ -29,6 +29,9 @@ def get_all_users(db: Session):
 
 def get_active_user_by_id(db: Session, user_id: str):
     return db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    
+def get_active_user_by_id(db: Session, user_id: str):
+    return db.query(User).filter(User.id == user_id, User.is_active == True).first()
 
 def create_refresh_token(db: Session, user_id, token: str, expires_at: datetime):
     record = RefreshToken(

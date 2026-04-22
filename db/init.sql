@@ -35,12 +35,16 @@ CREATE TABLE app.rooms (
     created_by  UUID         NOT NULL REFERENCES app.users(id),
     created_at  TIMESTAMP    DEFAULT NOW()
 );
+<<<<<<< HEAD
+
+=======
 CREATE TABLE app.room_members (
     room_id    UUID      NOT NULL REFERENCES app.rooms(id) ON DELETE CASCADE,
     user_id    UUID      NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     joined_at  TIMESTAMP DEFAULT NOW(),
     PRIMARY KEY (room_id, user_id)
 );
+>>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a
 CREATE TABLE app.emails (
     id              UUID PRIMARY KEY DEFAULT uuidv7(),
     sender_id       UUID         NOT NULL REFERENCES app.users(id),
@@ -61,13 +65,20 @@ CREATE TABLE app.messages (
     room_id         UUID    NULL     REFERENCES app.rooms(id),
     content         TEXT    NOT NULL,
     is_deleted      BOOLEAN DEFAULT FALSE,
+<<<<<<< HEAD
+=======
     is_read BOOLEAN DEFAULT FALSE,
+>>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a
     created_at      TIMESTAMP DEFAULT NOW(),
     CONSTRAINT chk_message_target CHECK (
         (recipient_id IS NOT NULL AND room_id IS NULL) OR
         (recipient_id IS NULL AND room_id IS NOT NULL)
     )
 );
+<<<<<<< HEAD
+
+=======
+>>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a
 CREATE TABLE app.files (
     id              UUID PRIMARY KEY DEFAULT uuidv7(),
     owner_id        UUID         NOT NULL REFERENCES app.users(id),
@@ -186,4 +197,8 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA siem TO siem_service;
 
 -- Siem service also needs to read app.users (for FK resolution)
 GRANT USAGE ON SCHEMA app TO siem_service;
+<<<<<<< HEAD
 GRANT SELECT ON app.users TO siem_service;
+=======
+GRANT SELECT ON app.users TO siem_service;
+>>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a

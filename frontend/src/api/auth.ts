@@ -81,5 +81,5 @@ export async function changePassword(payload: PasswordChangePayload): Promise<vo
 
 /** Public user directory for DM user picker (any authenticated user). */
 export async function listDirectoryUsers(): Promise<DirectoryUser[]> {
-  return apiGet<DirectoryUser[]>(`${AUTH_BASE}/auth/directory`);
+  return apiGet<DirectoryUser[]>(`${AUTH_BASE}/auth/users`);
 }

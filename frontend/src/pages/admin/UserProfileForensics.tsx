@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Search, Bell, Moon, Sun, MoreVertical, ShieldCheck, Clock, Globe, Activity, ShieldAlert, Menu, Loader2, ArrowLeft } from 'lucide-react';
+import { Search, Bell, Moon, Sun, MoreVertical, ShieldCheck, Clock, Globe, Activity, ShieldAlert, Menu, Loader2, ArrowLeft, Edit2, X } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
-import { getUser, suspendUser, unsuspendUser } from '../../api/admin';
-import type { User } from '../../types/user.types';
+import { getUser, suspendUser, unsuspendUser, updateUser } from '../../api/admin';
+import type { User, UserRole } from '../../types/user.types';
 import { useSidebar } from '../../context/SidebarContext';
 /** Derive initials from username (e.g. "ahmed.benali" → "AB") */
 function getInitials(username: string): string {
@@ -57,6 +57,33 @@ export default function UserProfileForensics() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toggleSidebar } = useSidebar();
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editRole, setEditRole] = useState<UserRole>('EMPLOYEE');
+  const [editDepartment, setEditDepartment] = useState('Engineering');
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const openEditModal = () => {
+    if (!user) return;
+    setEditRole(user.role);
+    setEditDepartment(user.department || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!user) return;
+    setIsUpdating(true);
+    try {
+      await updateUser(user.id, { role: editRole, department: editDepartment });
+      // Refresh local user state
+      setUser({ ...user, role: editRole, department: editDepartment });
+      setIsEditModalOpen(false);
+    } catch (error: any) {
+      alert("Failed to update user: " + error.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -233,6 +260,13 @@ export default function UserProfileForensics() {
 
             {/* Action Buttons */}
             <div className="flex flex-col gap-2 mt-auto pt-4 border-t border-border">
+              <button
+                onClick={openEditModal}
+                className="w-full py-2 bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/20 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+              >
+                <Edit2 size={14} />
+                Edit Profile
+              </button>
               {user.is_active ? (
                 <button
                   onClick={async () => {
@@ -459,6 +493,81 @@ export default function UserProfileForensics() {
         </div>
 
       </div>
+
+      {/* Edit Modal Overlay */}
+      {isEditModalOpen && user && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 text-primary">
+          <div className="bg-card w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200 border border-border">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-[#1e253c] text-white">
+              <div className="flex items-center gap-2 font-semibold">
+                <Edit2 size={16} />
+                <h3>Edit User Profile</h3>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-slate-300 hover:text-white transition-colors"
+                disabled={isUpdating}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 flex flex-col gap-6">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Username</label>
+                <input
+                  type="text"
+                  value={user.username}
+                  readOnly
+                  className="w-full px-3 py-2 bg-page border border-border rounded-md text-sm text-muted bg-opacity-50 cursor-not-allowed"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Access Role</label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value as UserRole)}
+                    className="w-full px-3 py-2 bg-page border border-border rounded-md text-sm focus:outline-none focus:border-blue-500 appearance-none bg-card"
+                  >
+                    <option value="EMPLOYEE">EMPLOYEE</option>
+                    <option value="MANAGER">MANAGER</option>
+                    <option value="IT_ADMIN">IT_ADMIN</option>
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Department</label>
+                  <select
+                    value={editDepartment}
+                    onChange={(e) => setEditDepartment(e.target.value)}
+                    className="w-full px-3 py-2 bg-page border border-border rounded-md text-sm focus:outline-none focus:border-blue-500 appearance-none bg-card"
+                  >
+                    <option value="Engineering">Engineering</option>
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Security Ops">Security Ops</option>
+                    <option value="Finance">Finance</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 bg-page/30">
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium hover:bg-page rounded-md transition-colors"
+                disabled={isUpdating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateProfile}
+                disabled={isUpdating}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isUpdating ? <Loader2 size={16} className="animate-spin" /> : 'Update Profile'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

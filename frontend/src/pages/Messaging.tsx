@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search, Bell, Moon, Sun, MoreVertical, Plus,
-  Lock, Shield, Info, AlertTriangle, Smile, Send,
+  Lock, Shield, Info, AlertTriangle, Send,
   Menu, ArrowLeft
 } from 'lucide-react';
 import { useThemeContext } from '../context/ThemeContext';
@@ -23,10 +23,10 @@ import {
 } from '../api/messaging';
 import { listUsers } from '../api/admin';
 import type { Room, RoomMessage, DirectMessage, DmConversation, UnreadCount, MessagingWsInbound, MessagingWsOutbound } from '../types/messaging.types';
+import type { User } from '../types/user.types';
 import { listDirectoryUsers } from '../api/auth';
-import type { User, DirectoryUser } from '../types/user.types';
 import type { WsManager } from '../lib/websocket';
-
+import type { DirectoryUser } from '../types/user.types';
 function ModalShell({
   title,
   open,
@@ -138,9 +138,11 @@ export default function Messaging() {
     localId: string;
   } | null>(null);
   const dmPendingLocalIdsRef = useRef<Record<string, string[]>>({});
+  const roomPendingLocalIdsRef = useRef<string[]>([]);
   const selectedDmUserIdRef = useRef<string | null>(null);
   const activeKindRef = useRef<'room' | 'dm'>('room');
   const userIdRef = useRef<string | null>(null);
+  const usernameRef = useRef<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
@@ -198,7 +200,8 @@ export default function Messaging() {
 
   useEffect(() => {
     userIdRef.current = user?.id ?? null;
-  }, [user?.id]);
+    usernameRef.current = user?.username ?? null;
+  }, [user?.id, user?.username]);
 
   useEffect(() => {
     let mounted = true;
@@ -281,19 +284,29 @@ export default function Messaging() {
 
       switch (msg.type) {
         case 'message': {
-          // room broadcast
-          setRoomMessages((prev) => [
-            ...prev,
-            {
-              id: msg.message_id,
-              room_id: msg.room_id,
-              sender_id: msg.from,
-              sender_username: msg.from,
-              content: msg.content,
-              timestamp: msg.timestamp,
-              created_at: msg.timestamp,
-            },
-          ]);
+          // room broadcast — replace optimistic local message if it's our own echo
+          const pendingIds = roomPendingLocalIdsRef.current;
+          const localId = pendingIds.length > 0 ? pendingIds.shift() : undefined;
+          roomPendingLocalIdsRef.current = pendingIds;
+
+          const realMsg = {
+            id: msg.message_id,
+            room_id: msg.room_id,
+            sender_id: msg.from,   // may be id or username depending on backend
+            sender_username: msg.from,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            created_at: msg.timestamp,
+          };
+
+          if (localId) {
+            // replace the optimistic placeholder with the confirmed server message
+            setRoomMessages((prev) =>
+              prev.map((m) => (m.id === localId ? { ...realMsg, sender_id: currentUserId ?? realMsg.sender_id } : m))
+            );
+          } else {
+            setRoomMessages((prev) => [...prev, realMsg]);
+          }
           break;
         }
         case 'dm': {
@@ -368,8 +381,14 @@ export default function Messaging() {
           break;
         }
         case 'message_read': {
-          // Mark that message as read in local history (so "Seen" works like Instagram)
           setDmMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.message_id && currentUserId && m.sender_id === currentUserId
+                ? { ...m, is_read: true }
+                : m,
+            ),
+          );
+          setRoomMessages((prev) =>
             prev.map((m) =>
               m.id === msg.message_id && currentUserId && m.sender_id === currentUserId
                 ? { ...m, is_read: true }
@@ -463,6 +482,26 @@ export default function Messaging() {
     return null;
   }, [dmMessages, user?.id]);
 
+  const lastSelfRoomMessageId = useMemo(() => {
+    if (!user?.id || !selectedRoomId) return null;
+    for (let i = roomMessages.length - 1; i >= 0; i--) {
+      const m = roomMessages[i];
+      if (m.sender_id === user.id && !m.id.startsWith('local-')) return m.id;
+    }
+    return null;
+  }, [roomMessages, user?.id, selectedRoomId]);
+
+  // When viewing a room, send read receipts for the latest message from others
+  useEffect(() => {
+    if (activeKind !== 'room' || !selectedRoomId || roomMessages.length === 0) return;
+    const lastOtherMsg = [...roomMessages]
+      .reverse()
+      .find((m) => m.sender_id !== user?.id && !m.id.startsWith('local-'));
+    if (!lastOtherMsg) return;
+    wsRef.current?.send({ type: 'read', message_id: lastOtherMsg.id, from: lastOtherMsg.sender_id });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKind, selectedRoomId, roomMessages.length]);
+
   function toDateKey(value: string | undefined | null): string {
     if (!value) return 'unknown';
     const d = new Date(value);
@@ -502,13 +541,18 @@ export default function Messaging() {
   }, [users, userSearch]);
 
   async function openAddUsers() {
+    if (!selectedRoomId) return;
     setAddUsersError(null);
     setSelectedUserIds(new Set());
     setAddUsersOpen(true);
     setUsersLoading(true);
     try {
-      const data = await listUsers();
-      setUsers(data.filter((u) => u.is_active));
+      const [data, membersRes] = await Promise.all([
+        listUsers(),
+        getRoomMembers(selectedRoomId)
+      ]);
+      const memberSet = new Set(membersRes.members);
+      setUsers(data.filter((u) => u.is_active && !memberSet.has(u.id)));
     } catch (e) {
       setAddUsersError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
@@ -601,6 +645,23 @@ export default function Messaging() {
       if (!selectedRoomId) return;
       sendWs({ type: 'room', room_id: selectedRoomId, content });
       setDraft('');
+      // Optimistic update — appears on right immediately
+      if (user?.id) {
+        const localId = `local-room-${Date.now()}`;
+        roomPendingLocalIdsRef.current = [...roomPendingLocalIdsRef.current, localId];
+        setRoomMessages((prev) => [
+          ...prev,
+          {
+            id: localId,
+            room_id: selectedRoomId,
+            sender_id: user.id,
+            sender_username: user.username,
+            content,
+            timestamp: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
       return;
     }
 
@@ -799,8 +860,8 @@ export default function Messaging() {
                     }
                   }}
                   className={`w-full flex items-start gap-4 px-6 py-3 transition-colors border-l-2 ${active
-                      ? 'bg-[#4f8ef7]/5 border-l-[#4f8ef7]'
-                      : 'border-l-transparent hover:bg-card hover:border-l-border text-muted hover:text-primary'
+                    ? 'bg-[#4f8ef7]/5 border-l-[#4f8ef7]'
+                    : 'border-l-transparent hover:bg-card hover:border-l-border text-muted hover:text-primary'
                     }`}
                 >
                   <div className="relative w-8 h-8 rounded-full bg-card text-muted flex items-center justify-center text-xs font-bold flex-shrink-0 border border-border">
@@ -925,33 +986,8 @@ export default function Messaging() {
                     );
                   }
 
-                  if (isSelf) {
-                    return (
-                      <div key={msg.id} className="flex flex-col items-end gap-1 ml-auto max-w-2xl">
-                        {showDivider && (
-                          <div className="flex items-center justify-center my-4 w-full">
-                            <div className="h-px bg-border flex-1"></div>
-                            <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
-                              {formatDayLabel(dateKey)}
-                            </span>
-                            <div className="h-px bg-border flex-1"></div>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-xs font-medium text-muted">
-                            {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
-                          </span>
-                          <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                        </div>
-                        <div className="bg-[#4f8ef7] text-white p-4 rounded-2xl rounded-tr-sm shadow-md text-sm leading-relaxed">
-                          {msg.content}
-                        </div>
-                      </div>
-                    );
-                  }
-
                   return (
-                    <div key={msg.id} className="flex flex-col gap-2 max-w-2xl">
+                    <div key={msg.id}>
                       {showDivider && (
                         <div className="flex items-center justify-center my-4 w-full">
                           <div className="h-px bg-border flex-1"></div>
@@ -961,20 +997,29 @@ export default function Messaging() {
                           <div className="h-px bg-border flex-1"></div>
                         </div>
                       )}
-                      <div className="flex items-start gap-4">
-                        <div className="w-8 h-8 rounded-full bg-card text-muted flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1 shadow-sm border border-border">
-                          {senderLabel.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="flex flex-col gap-1 items-start">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                            <span className="text-xs font-medium text-muted">
-                              {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
-                            </span>
+                      <div className={`flex items-end gap-2 ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                        {!isSelf && (
+                          <div className="w-7 h-7 rounded-full bg-card text-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0 border border-border">
+                            {senderLabel.slice(0, 2).toUpperCase()}
                           </div>
-                          <div className="bg-card border border-border text-primary p-4 rounded-2xl rounded-tl-sm shadow-sm text-sm leading-relaxed">
+                        )}
+                        <div className={`flex flex-col gap-0.5 max-w-[70%] ${isSelf ? 'items-end' : 'items-start'}`}>
+                          <span className="text-[11px] font-semibold text-muted px-1 flex items-center gap-1 opacity-80">
+                            {isSelf ? '' : senderLabel}{' '}
+                            <span className="font-normal">{msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], {timeStyle: 'short'}) : ''}</span>
+                          </span>
+                          <div className={`inline-block px-3 py-2 rounded-2xl text-sm leading-snug break-words ${
+                            isSelf
+                              ? 'bg-[#4f8ef7] text-white rounded-br-sm'
+                              : 'bg-card border border-border text-primary rounded-bl-sm'
+                          }`}>
                             {msg.content}
                           </div>
+                          {isSelf && msg.id === lastSelfRoomMessageId && msg.is_read && (
+                            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted px-1">
+                              Seen
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1003,7 +1048,7 @@ export default function Messaging() {
                     msg.id === lastSelfDmMessageId &&
                     msg.is_read === true;
                   return (
-                    <div key={msg.id} className="flex flex-col gap-2">
+                    <div key={msg.id}>
                       {showDivider && (
                         <div className="flex items-center justify-center my-4 w-full">
                           <div className="h-px bg-border flex-1"></div>
@@ -1013,18 +1058,26 @@ export default function Messaging() {
                           <div className="h-px bg-border flex-1"></div>
                         </div>
                       )}
-
-                      <div className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-2xl ${isSelf ? 'text-right' : 'text-left'}`}>
-                          <div className="flex items-center gap-2 mb-1 justify-between">
-                            <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                            <span className="text-xs font-medium text-muted">{new Date(msg.created_at).toLocaleTimeString()}</span>
+                      <div className={`flex items-end gap-2 mb-1 ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                        {!isSelf && (
+                          <div className="w-7 h-7 rounded-full bg-card text-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0 border border-border">
+                            {senderLabel.slice(0, 2).toUpperCase()}
                           </div>
-                          <div className={`${isSelf ? 'bg-[#4f8ef7] text-white' : 'bg-card border border-border text-primary'} p-4 rounded-2xl shadow-sm text-sm leading-relaxed`}>
+                        )}
+                        <div className={`flex flex-col gap-0.5 max-w-[70%] ${isSelf ? 'items-end' : 'items-start'}`}>
+                          <span className="text-[11px] font-semibold text-muted px-1 flex items-center gap-1 opacity-80">
+                            {!isSelf && <span className="text-primary">{senderLabel} </span>}
+                            {new Date(msg.created_at).toLocaleTimeString([], {timeStyle: 'short'})}
+                          </span>
+                          <div className={`inline-block px-3 py-2 rounded-2xl text-sm leading-snug break-words ${
+                            isSelf
+                              ? 'bg-[#4f8ef7] text-white rounded-br-sm'
+                              : 'bg-card border border-border text-primary rounded-bl-sm'
+                          }`}>
                             {msg.content}
                           </div>
                           {showSeen && (
-                            <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted">
+                            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted px-1">
                               Seen
                             </div>
                           )}
@@ -1129,12 +1182,15 @@ export default function Messaging() {
                   }
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void submitSend();
+                    }
+                  }}
                   disabled={activeKind === 'room' ? !selectedRoomId : !selectedDmUserId}
                   className="flex-1 bg-transparent border-none outline-none text-sm text-primary px-3 placeholder:text-muted disabled:opacity-60"
                 />
-                <button className="p-2 text-muted hover:text-primary transition-colors flex-shrink-0 mr-2">
-                  <Smile className="w-5 h-5" />
-                </button>
                 <button
                   onClick={submitSend}
                   className="flex items-center justify-center gap-2 bg-[#4f8ef7] hover:bg-[#3b7ae5] text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md shadow-[#4f8ef7]/20 transition-all active:scale-95 flex-shrink-0"
@@ -1144,7 +1200,7 @@ export default function Messaging() {
               </div>
             </div>
             <div className="max-w-4xl mx-auto flex justify-end mt-2">
-              <span className="text-[10px] font-bold text-muted uppercase tracking-widest">⌘ + Enter to send</span>
+              <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Enter to send</span>
             </div>
             {sendError && (
               <div className="max-w-4xl mx-auto mt-2 text-xs font-medium text-red-500">

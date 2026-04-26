@@ -27,6 +27,7 @@ export interface RoomMessage {
   sender_username?: string;
   timestamp?: string;
   edited?: boolean;
+  is_read?: boolean;
 }
 
 export interface DirectMessage {

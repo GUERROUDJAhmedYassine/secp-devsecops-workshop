@@ -4,18 +4,18 @@
  * ------------------------------------------------------------------ */
 
 import { useState, useEffect } from 'react';
-import { getEmails, getChatMessages } from '../api/email';
-import type { Email } from '../types/email.types';
+import { getInbox, getChatMessages } from '../api/email';
+import type { EmailMessage } from '../types/email.types';
 
 export function useEmails() {
-  const [emails, setEmails] = useState<Email[]>([]);
+  const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [chat, setChat] = useState<unknown[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getEmails(), getChatMessages('engineering-team')])
-      .then(([e, c]) => {
-        setEmails(e);
+    Promise.all([getInbox(), getChatMessages('engineering-team')])
+      .then(([inboxData, c]) => {
+        setEmails(inboxData.emails);
         setChat(c);
       })
       .catch(console.error)

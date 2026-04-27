@@ -6,17 +6,26 @@ from schemas import UserCreate, UserLogin, PasswordChange, TokenResponse, UserRe
 from dependencies import get_current_user, require_role
 from services import auth_service, user_service
 import crud
+import psutil
+import socket
+import platform
+import time
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(
     body: UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_role(["IT_ADMIN"])),
 ):
     """Create a new user account. IT_ADMIN only."""
-    user = user_service.register_user(db, body)
+    # Extract token for files-service upload
+    auth_header = request.headers.get("Authorization")
+    token = auth_header.split(" ")[1] if auth_header and " " in auth_header else None
+    
+    user = user_service.register_user(db, body, admin_token=token)
     return UserResponse.build(user)
 
 @router.post("/login", response_model=TokenResponse)
@@ -71,3 +80,38 @@ def change_password(
     """Change the current user's password."""
     user_service.change_user_password(db, current_user, body, request.client.host)
     return {"message": "Password updated successfully"}
+
+
+@router.get("/system-health")
+def get_system_health():
+    """Return hardware and OS health metrics."""
+    # CPU Usage (non-blocking for fast response, or use a small interval)
+    # interval=None returns percentage since last call
+    cpu_usage = psutil.cpu_percent(interval=0.1)
+    cpu_cores = psutil.cpu_count(logical=True)
+    server_host = socket.gethostname()
+    os_platform = f"{platform.system()} {platform.release()}"
+    
+    # Uptime
+    boot_time = psutil.boot_time()
+    uptime_seconds = time.time() - boot_time
+    
+    days = int(uptime_seconds // (24 * 3600))
+    hours = int((uptime_seconds % (24 * 3600)) // 3600)
+    minutes = int((uptime_seconds % 3600) // 60)
+    
+    if days > 0:
+        uptime_str = f"{days}d {hours}h {minutes}m"
+    elif hours > 0:
+        uptime_str = f"{hours}h {minutes}m"
+    else:
+        uptime_str = f"{minutes}m"
+
+    return {
+        "cpu_usage_percent": cpu_usage,
+        "cpu_cores": cpu_cores,
+        "hostname": server_host,
+        "platform": platform.system(),
+        "platform_release": platform.release(),
+        "uptime_seconds": uptime_seconds
+    }

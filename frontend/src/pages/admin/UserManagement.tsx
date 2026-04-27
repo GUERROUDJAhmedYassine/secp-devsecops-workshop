@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, MoreVertical, Moon, Sun, Plus, TrendingUp, AlertTriangle, X, Info, Loader2, Menu, RefreshCw, Unlock, Trash2 } from 'lucide-react';
+import { Search, MoreVertical, Moon, Sun, Plus, TrendingUp, AlertTriangle, X, Info, Loader2, Menu, RefreshCw, Unlock, Trash2, Download } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { Link } from 'react-router-dom';
 import { registerUser, listUsers, deleteUser, unlockUser } from '../../api/admin';
+import { apiGetBlob } from '../../lib/apiClient';
+import { FILES_BASE } from '../../lib/constants';
 import type { User, UserRole } from '../../types/user.types';
 import { useSidebar } from '../../context/SidebarContext';
 import NotificationDropdown from '../../components/NotificationDropdown';
@@ -104,6 +106,56 @@ export default function UserManagement() {
       fetchUsers();
     } catch (error: any) {
       alert("Failed to unlock user: " + error.message);
+    }
+  };
+
+  const handleDownloadVPN = async (user: User) => {
+    // If we have a stored file, download it from the files-service
+    if (user.vpn_config_file_id) {
+      try {
+        const response = await apiGetBlob(`${FILES_BASE}/files/${user.vpn_config_file_id}`);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `vpn_${user.username}.conf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        return;
+      } catch (error: any) {
+        console.warn('Storage download failed, falling back to client-side generation:', error.message);
+      }
+    }
+
+    // Fallback: generate the .conf client-side from user data already in the response
+    if (user.vpn_internal_ip) {
+      const confContent = [
+        '[Interface]',
+        `# Client config for ${user.username}`,
+        `Address = ${user.vpn_internal_ip}/24`,
+        'DNS = 1.1.1.1',
+        '',
+        '[Peer]',
+        '# Server — ask your IT Admin for the server public key',
+        'PublicKey = <SERVER_PUBLIC_KEY>',
+        'Endpoint = <SERVER_IP>:51820',
+        'AllowedIPs = 0.0.0.0/0',
+        'PersistentKeepalive = 25',
+      ].join('\n');
+
+      const blob = new Blob([confContent], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `vpn_${user.username}.conf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } else {
+      alert(`No VPN configuration found for ${user.username}.`);
     }
   };
 
@@ -282,6 +334,16 @@ export default function UserManagement() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
+                          {(user.vpn_config_file_id || user.vpn_internal_ip) && (
+                            <button
+                              onClick={() => handleDownloadVPN(user)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                              title="Download WireGuard VPN Configuration"
+                            >
+                              <Download size={12} />
+                              VPN Config
+                            </button>
+                          )}
                           <button
                             onClick={() => handleUnlockUser(user.id)}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold tracking-wider uppercase bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500 hover:text-white transition-all"

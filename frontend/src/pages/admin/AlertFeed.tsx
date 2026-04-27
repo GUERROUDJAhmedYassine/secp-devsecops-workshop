@@ -93,20 +93,6 @@ export default function AlertFeed() {
             </div>
           )}
         </div>
-
-        {/* Bottom KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-auto pt-6">
-          <StatCard title="ACTIVE ALERTS" value="42" sub="+12% from yesterday" />
-          <StatCard title="MEAN TIME TO RESOLVE" value="14m" sub="-4m improvement" positive />
-          <StatCard title="BLOCKED IPS" value="1,284" sub="Real-time sync active" />
-          <div className="p-5 border border-border rounded-lg bg-card shadow-sm flex flex-col justify-between">
-            <span className="text-[10px] font-bold tracking-wider uppercase text-muted">SYSTEM HEALTH</span>
-            <div className="flex flex-col mt-2">
-              <span className="text-2xl font-bold tracking-tight text-emerald-500">Stable</span>
-              <span className="text-[10px] text-muted font-medium mt-1">All services nominal</span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -224,20 +210,6 @@ function AlertCard({ alert, updateAlertStatus }: { alert: Alert; updateAlertStat
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ title, value, sub, positive }: { title: string, value: string, sub: string, positive?: boolean }) {
-  return (
-    <div className="p-5 border border-border rounded-lg bg-card shadow-sm flex flex-col justify-between">
-      <span className="text-[10px] font-bold tracking-wider uppercase text-muted">{title}</span>
-      <div className="flex flex-col mt-2">
-        <span className="text-2xl font-bold tracking-tight">{value}</span>
-        <span className={`text-[10px] font-bold tracking-wide mt-1 ${positive ? 'text-emerald-500' : 'text-muted'}`}>
-          {sub}
-        </span>
       </div>
     </div>
   );

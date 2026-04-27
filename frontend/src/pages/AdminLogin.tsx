@@ -7,13 +7,13 @@ import {
   User,
   Eye,
   XCircle,
-  Globe,
   Sun,
   Moon,
-  LockKeyhole
+  LockKeyhole,
+  Terminal
 } from 'lucide-react';
 
-export default function Login() {
+export default function AdminLogin() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useThemeContext();
   const { login, logout, error, clearError, isLoading } = useAuth();
@@ -36,16 +36,16 @@ export default function Login() {
     try {
       const user = await login({ username, password });
       
-      // Teacher's Requirement: Normal login page rejects IT_ADMIN
-      if (user.role === 'IT_ADMIN') {
+      // Teacher's Requirement: Admin portal only allows IT_ADMIN
+      if (user.role !== 'IT_ADMIN') {
         await logout(); // Kick them out immediately
-        setLocalError('Please use the management portal.');
+        setLocalError('Access denied. Unauthorized portal.');
         return;
       }
 
-      navigate('/dashboard');
+      navigate('/admin/monitor');
     } catch (err) {
-      // The error is already populated in the context (accessible via `error`)
+      // Error handled by context
     }
   };
 
@@ -65,17 +65,22 @@ export default function Login() {
 
       <div className="flex-1 flex flex-col items-center justify-center p-4">
 
-        {/* Main Login Card */}
-        <div className="w-full max-w-[420px] bg-card border border-border rounded-lg shadow-sm p-6 sm:p-8 flex flex-col relative z-10 transition-colors duration-200">
+        {/* Main Login Card - Slightly different border to indicate Admin */}
+        <div className="w-full max-w-[420px] bg-card border-2 border-red-500/30 rounded-lg shadow-xl p-6 sm:p-8 flex flex-col relative z-10 transition-colors duration-200">
+          
+          {/* Security Overlay Label */}
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] font-bold px-4 py-1 rounded-full tracking-[0.2em] uppercase">
+            Admin Gateway
+          </div>
 
           {/* Header */}
-          <div className="flex flex-col items-center mb-8">
+          <div className="flex flex-col items-center mb-8 mt-2">
             <div className="flex items-center gap-2 mb-2">
-              <ShieldPlus className="text-blue-500" size={24} />
-              <h1 className="text-xl font-bold tracking-wide">SECP PLATFORM</h1>
+              <Terminal className="text-red-500" size={24} />
+              <h1 className="text-xl font-bold tracking-wide">SECURE SHELL</h1>
             </div>
-            <p className="text-[9px] uppercase tracking-wider text-muted font-semibold">
-              Secure Enterprise Communication Platform
+            <p className="text-[9px] uppercase tracking-wider text-muted font-semibold text-center">
+              IT Administration & SIEM Management Portal
             </p>
           </div>
 
@@ -89,8 +94,8 @@ export default function Login() {
                 </div>
                 <input
                   type="text"
-                  placeholder="Enter your username"
-                  className="w-full pl-10 pr-4 py-2 bg-[#0f1117] dark:bg-[#1a2035] border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                  placeholder="Admin Username"
+                  className="w-full pl-10 pr-4 py-2 bg-[#0f1117] dark:bg-[#1a2035] border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-red-500 transition-colors"
                   style={{ backgroundColor: 'var(--bg-page)' }}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -106,8 +111,8 @@ export default function Login() {
               </div>
               <input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Enter your password"
-                className="w-full pl-10 pr-10 py-2 border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-blue-500 transition-colors"
+                placeholder="Admin Password"
+                className="w-full pl-10 pr-10 py-2 border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-red-500 transition-colors"
                 style={{ backgroundColor: 'var(--bg-page)' }}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -126,9 +131,9 @@ export default function Login() {
             {/* Error Banners */}
             <div className="flex flex-col gap-2 mt-2">
               {(error || localError) && (
-                <div className="bg-red-300 border-l-4 border-red-700 p-3 flex items-center gap-3 rounded-sm">
-                  <XCircle size={16} className="text-red-700 shrink-0" />
-                  <p className="text-xs text-red-700 font-medium">
+                <div className="bg-red-900/20 border-l-4 border-red-500 p-3 flex items-center gap-3 rounded-sm">
+                  <XCircle size={16} className="text-red-500 shrink-0" />
+                  <p className="text-xs text-red-500 font-medium">
                     {localError || error}
                   </p>
                 </div>
@@ -139,53 +144,29 @@ export default function Login() {
             <button
               type="submit"
               disabled={isLoading}
-              className={`mt-2 w-full font-medium py-2.5 rounded-md text-sm transition-colors ${isLoading
-                ? 'bg-blue-600/50 text-white/70 cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 text-white'
+              className={`mt-2 w-full font-bold py-2.5 rounded-md text-sm transition-colors tracking-widest ${isLoading
+                ? 'bg-red-600/50 text-white/70 cursor-not-allowed'
+                : 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20'
                 }`}
             >
-              {isLoading ? 'SIGNING IN...' : 'SIGN IN'}
+              {isLoading ? 'AUTHENTICATING...' : 'AUTHORIZE ACCESS'}
             </button>
           </form>
 
-          {/* Footer inside card */}
-          <div className="mt-8 flex flex-col items-center justify-center text-xs gap-1">
-            <span className="text-muted">Don't have an account?</span>
-            <button className="text-blue-500 hover:text-blue-600 transition-colors">
-              Contact your IT administrator.
-            </button>
-          </div>
         </div>
 
         {/* Page Footer */}
         <div className="mt-12 flex flex-col items-center justify-center text-center px-4 w-full">
           <div className="flex items-center gap-2 mb-3">
-            <Globe size={14} className="text-muted" />
+            <ShieldPlus size={14} className="text-red-500" />
             <h2 className="text-[10px] font-bold tracking-[0.2em] text-primary uppercase">
-              Security Enforcement
+              Restricted Access Area
             </h2>
           </div>
           <p className="text-[10px] text-muted max-w-lg leading-relaxed mb-6">
-            This platform requires an active VPN connection. Contact IT if you cannot connect. System activities
-            are logged and subject to monitoring.
+            Unauthorized access to this portal is a federal offense. 
+            IP address and geolocation data are being recorded.
           </p>
-
-          <div className="flex flex-col gap-3">
-            <p className="text-[9px] text-muted uppercase tracking-wider font-semibold">
-              © 2024 SECP MONOLITHIC VAULT. ALL RIGHTS RESERVED. HIGH-SECURITY ENVIRONMENT.
-            </p>
-            <div className="flex items-center justify-center gap-6 mt-1">
-              <button className="text-[9px] font-bold text-muted hover:text-primary transition-colors tracking-wider uppercase">
-                Security Policy
-              </button>
-              <button className="text-[9px] font-bold text-muted hover:text-primary transition-colors tracking-wider uppercase">
-                Terms of Access
-              </button>
-              <button className="text-[9px] font-bold text-muted hover:text-primary transition-colors tracking-wider uppercase">
-                System Status
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

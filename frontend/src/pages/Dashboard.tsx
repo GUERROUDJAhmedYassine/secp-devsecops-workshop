@@ -261,7 +261,7 @@ export default function Dashboard() {
     },
     {
       enabled: Boolean(user?.id),
-      intervalMs: 8000,
+      intervalMs: 5000,
     },
   );
 

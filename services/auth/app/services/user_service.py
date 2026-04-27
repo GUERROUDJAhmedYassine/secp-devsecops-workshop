@@ -1,5 +1,6 @@
 import base64
 import os
+import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -9,7 +10,13 @@ from schemas import UserCreate, PasswordChange, AdminUserUpdate
 from siem import siem_emit
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives import serialization
-from config import WG_SERVER_PUBLIC_KEY, WG_SERVER_ENDPOINT, WG_INTERNAL_SUBNET, WG_CONFIG_PATH
+from config import (
+    WG_SERVER_PUBLIC_KEY, 
+    WG_SERVER_ENDPOINT, 
+    WG_INTERNAL_SUBNET, 
+    WG_CONFIG_PATH,
+    FILES_SERVICE_URL
+)
 
 def _generate_wg_keys():
     """Programmatically generate a WireGuard key pair."""
@@ -66,7 +73,29 @@ PersistentKeepalive = 25
 """
     return pub_b64, next_ip, client_conf
 
-def register_user(db: Session, body: UserCreate):
+def upload_vpn_config_to_storage(token: str, username: str, config_str: str) -> str:
+    """Uploads the generated .conf file to the files-service and returns the file_id."""
+    try:
+        with httpx.Client() as client:
+            files = {
+                'file': (f"vpn_{username}.conf", config_str, 'application/octet-stream')
+            }
+            headers = {'Authorization': f"Bearer {token}"}
+            # We use bucket='admin' to keep these configs separated
+            response = client.post(
+                f"{FILES_SERVICE_URL}/files/upload?bucket=admin",
+                files=files,
+                headers=headers,
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            return str(data['id'])
+    except Exception as e:
+        print(f"Failed to upload VPN config to storage service: {e}")
+        return None
+
+def register_user(db: Session, body: UserCreate, admin_token: str = None):
     if crud.get_user_by_username(db, body.username):
         raise HTTPException(status_code=400, detail="Username already taken")
 
@@ -90,6 +119,13 @@ def register_user(db: Session, body: UserCreate):
         user.vpn_public_key = pub_key
         user.vpn_internal_ip = internal_ip
         user.vpn_config = vpn_config # Attach for response
+        
+        # Step 2: Upload to storage if token provided
+        if admin_token:
+            file_id = upload_vpn_config_to_storage(admin_token, user.username, vpn_config)
+            if file_id:
+                user.vpn_config_file_id = file_id
+        
         db.commit()
     except Exception as e:
         print(f"Error provisioning VPN for {user.username}: {e}")

@@ -2,6 +2,7 @@ import os
 from database import SessionLocal
 from models import User, UserRole
 from security import hash_password
+from services.user_service import provision_vpn
 
 def create_superuser():
     username = os.getenv("ADMIN_USERNAME", "admin")
@@ -21,6 +22,26 @@ def create_superuser():
             )
             db.add(new_user)
             db.commit()
+            db.refresh(new_user)
+
+            # VPN Provisioning
+            try:
+                pub_key, internal_ip, vpn_config = provision_vpn(db, new_user.username)
+                new_user.vpn_public_key = pub_key
+                new_user.vpn_internal_ip = internal_ip
+                db.commit()
+
+                print("VPN provisioning successful.")
+                print("=" * 50)
+                print("ADMIN VPN CONFIG (save this):")
+                print("=" * 50)
+                print(vpn_config)
+                print("=" * 50)
+
+            except Exception as vpn_err:
+                print(f"Warning: VPN provisioning failed — {vpn_err}")
+                print("Admin account created but without VPN profile.")
+
             print("Superuser created successfully.")
         else:
             print(f"Superuser '{username}' already exists.")

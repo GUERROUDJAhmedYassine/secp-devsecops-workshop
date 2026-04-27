@@ -25,6 +25,7 @@ export function useSiem() {
   const [baselines, setBaselines] = useState<UserBaseline[]>([]);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [lastMessage, setLastMessage] = useState<unknown>(null);
   const wsRef = useRef<WsManager | null>(null);
 
   /* ---- initial fetch ---- */
@@ -48,22 +49,37 @@ export function useSiem() {
     if (!isAuthenticated || !isAdmin) return;
 
     const ws = createSiemSocket((raw: unknown) => {
-      const payload = raw as SiemWsPayload;
+      setLastMessage(raw);
+      const payloads = Array.isArray(raw) ? raw : [raw];
 
-      switch (payload.type) {
-        case 'new_alert':
-          setAlerts((prev) => [payload.data, ...prev]);
-          break;
+      payloads.forEach(p => {
+        const payload = p as SiemWsPayload;
 
-        case 'alert_updated':
-          setAlerts((prev) =>
-            prev.map((a) => (a.id === payload.data.id ? payload.data : a)),
-          );
-          break;
+        switch (payload.type) {
+          case 'new_alert':
+            setAlerts((prev) => [payload.data, ...prev]);
+            break;
 
-        default:
-          break;
-      }
+          case 'alert_updated':
+            setAlerts((prev) =>
+              prev.map((a) => (a.id === payload.data.id ? payload.data : a)),
+            );
+            break;
+            
+          case 'new_baseline':
+            setBaselines((prev) => {
+              const exists = prev.find(b => b.user_id === payload.data.user_id);
+              if (exists) {
+                return prev.map(b => b.user_id === payload.data.user_id ? payload.data : b);
+              }
+              return [...prev, payload.data];
+            });
+            break;
+
+          default:
+            break;
+        }
+      });
     });
 
     ws.connect();
@@ -102,5 +118,6 @@ export function useSiem() {
     loading,
     updateAlertStatus,
     refreshAlerts,
+    lastMessage,
   };
 }

@@ -23,6 +23,8 @@ export interface EventListParams {
   event_type?: string;
   from?: string;
   to?: string;
+  user_id?: string;
+  service?: string;
 }
 
 export async function getEvents(params: EventListParams = {}): Promise<{
@@ -36,6 +38,8 @@ export async function getEvents(params: EventListParams = {}): Promise<{
   if (params.event_type) qs.set('event_type', params.event_type);
   if (params.from) qs.set('from', params.from);
   if (params.to) qs.set('to', params.to);
+  if (params.user_id) qs.set('user_id', params.user_id);
+  if (params.service) qs.set('service', params.service);
 
   return apiGet<{ events: SiemEvent[]; total: number }>(
     `${SIEM_BASE}/events?${qs.toString()}`,

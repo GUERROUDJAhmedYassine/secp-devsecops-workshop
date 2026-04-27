@@ -6,27 +6,29 @@ export type AlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'DISMISSED';
 export type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface SiemEvent {
-  id: string;
+  id: string | number;
   event_type: string;
-  source_ip: string;
+  source_ip: string | null;
+  service: string;
   user_id: string | null;
   username: string | null;
   description: string;
   severity: AlertSeverity;
-  timestamp: string;
-  metadata: Record<string, unknown>;
+  created_at: string;
+  payload: Record<string, unknown>;
 }
 
 export interface Alert {
   id: string;
-  event_id: string;
-  title: string;
-  description: string;
+  alert_type: string;
   severity: AlertSeverity;
+  user_id: string;
+  username: string | null;
+  description: string;
+  evidence: any;
   status: AlertStatus;
-  assigned_to: string | null;
   created_at: string;
-  updated_at: string;
+  resolved_at: string | null;
 }
 
 export interface AlertStatusUpdate {
@@ -36,12 +38,14 @@ export interface AlertStatusUpdate {
 
 export interface UserBaseline {
   user_id: string;
-  username: string;
+  username: string | null;
   avg_login_hour: number;
-  usual_ips: string[];
-  avg_emails_per_day: number;
-  avg_files_per_day: number;
-  risk_score: number;
+  known_ips: string[];
+  avg_messages_day: number;
+  avg_files_day: number;
+  avg_emails_day: number;
+  confidence: number;
+  tx_count: number;
   last_updated: string;
 }
 
@@ -50,4 +54,5 @@ export type SiemWsPayload =
   | { type: 'new_alert';      data: Alert }
   | { type: 'alert_updated';  data: Alert }
   | { type: 'new_event';      data: SiemEvent }
+  | { type: 'new_baseline';   data: UserBaseline }
   | { type: 'heartbeat';      data: { ts: string } };

@@ -1,19 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Bell, MoreVertical, Moon, Sun, MinusSquare, PlusSquare, Menu } from 'lucide-react';
-import { mockAlerts, mockEvents } from '../../mock/mockAuth';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useSidebar } from '../../context/SidebarContext';
+import { useSiem } from '../../hooks/useSiem';
+import { getEvents } from '../../api/siem';
+import type { SiemEvent, Alert } from '../../types/siem.types';
 
 export default function AlertFeed() {
   const [activeTab, setActiveTab] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const { theme, toggleTheme } = useThemeContext();
   const { toggleSidebar } = useSidebar();
-  const filteredAlerts = mockAlerts.filter(a => {
-    const matchesTab = activeTab === 'All' || a.status.toLowerCase() === activeTab.toLowerCase();
+  const { alerts, loading, updateAlertStatus } = useSiem();
+
+  const filteredAlerts = alerts.filter(a => {
+    const matchesTab = activeTab === 'All' || 
+      (activeTab === 'Open' && a.status === 'OPEN') ||
+      (activeTab === 'Investigating' && a.status === 'ACKNOWLEDGED') ||
+      (activeTab === 'Closed' && (a.status === 'RESOLVED' || a.status === 'DISMISSED'));
     const matchesSearch = a.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.severity.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.username.toLowerCase().includes(searchTerm.toLowerCase());
+      (a.username && a.username.toLowerCase().includes(searchTerm.toLowerCase()));
     return matchesTab && matchesSearch;
   });
 
@@ -73,10 +80,15 @@ export default function AlertFeed() {
 
         {/* Alerts List */}
         <div className="flex flex-col gap-4">
-          {filteredAlerts.map(alert => (
-            <AlertCard key={alert.id} alert={alert} />
-          ))}
-          {filteredAlerts.length === 0 && (
+          {loading ? (
+            <div className="p-8 text-center text-muted border border-border/50 border-dashed rounded-lg">
+              Loading alerts...
+            </div>
+          ) : filteredAlerts.length > 0 ? (
+            filteredAlerts.map(alert => (
+              <AlertCard key={alert.id} alert={alert} updateAlertStatus={updateAlertStatus} />
+            ))
+          ) : (
             <div className="p-8 text-center text-muted border border-border/50 border-dashed rounded-lg">
               No alerts found for this filter.
             </div>
@@ -103,11 +115,22 @@ export default function AlertFeed() {
 
 // Subcomponents
 
-function AlertCard({ alert }: { alert: any }) {
-  const [expanded, setExpanded] = useState(alert.id === 'a1'); // Default expand first one
+function AlertCard({ alert, updateAlertStatus }: { alert: Alert; updateAlertStatus: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const [relatedEvents, setRelatedEvents] = useState<SiemEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
 
-  // Find related events
-  const relatedEvents = mockEvents.filter(e => alert.evidence.includes(e.id));
+  // Fetch related events when expanded
+  useEffect(() => {
+    if (expanded && relatedEvents.length === 0) {
+      setLoadingEvents(true);
+      // Fetch events for this specific user
+      getEvents({ user_id: alert.user_id, per_page: 5 })
+        .then(res => setRelatedEvents(res.events))
+        .catch(console.error)
+        .finally(() => setLoadingEvents(false));
+    }
+  }, [expanded, alert.user_id, relatedEvents.length]);
 
   return (
     <div className="border border-border rounded-lg bg-card shadow-sm overflow-hidden flex flex-col transition-colors">
@@ -126,41 +149,53 @@ function AlertCard({ alert }: { alert: any }) {
         <div className="flex flex-col sm:flex-row sm:items-center gap-6">
           <div className="flex flex-col text-right">
             <span className="text-[9px] uppercase tracking-wider text-muted font-bold">Timestamp</span>
-            <span className="text-xs font-mono">{alert.created_at}</span>
+            <span className="text-xs font-mono">{new Date(alert.created_at).toLocaleString()}</span>
           </div>
           <div className="flex flex-col text-right w-24">
             <span className="text-[9px] uppercase tracking-wider text-muted font-bold">Status</span>
             <span className="text-xs font-semibold capitalize flex items-center justify-end gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${alert.status === 'OPEN' ? 'bg-blue-500' :
-                  alert.status === 'INVESTIGATING' ? 'bg-amber-500' : 'bg-green-500'
+                  alert.status === 'ACKNOWLEDGED' ? 'bg-amber-500' : 'bg-green-500'
                 }`}></span>
               {alert.status.toLowerCase()}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded transition-colors">
-              Suspend
-            </button>
-            <button className="px-4 py-1.5 border border-border hover:bg-page text-primary text-xs font-medium rounded transition-colors">
-              {alert.status === 'CLOSED' ? 'Details' : 'Close'}
+            {alert.status !== 'RESOLVED' && alert.status !== 'DISMISSED' && (
+              <button 
+                onClick={() => updateAlertStatus(alert.id, { status: 'ACKNOWLEDGED' })}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded transition-colors">
+                Suspend
+              </button>
+            )}
+            <button 
+              onClick={() => {
+                if (alert.status !== 'RESOLVED' && alert.status !== 'DISMISSED') {
+                  updateAlertStatus(alert.id, { status: 'RESOLVED' });
+                }
+              }}
+              className="px-4 py-1.5 border border-border hover:bg-page text-primary text-xs font-medium rounded transition-colors">
+              {(alert.status === 'RESOLVED' || alert.status === 'DISMISSED') ? 'Details' : 'Close'}
             </button>
           </div>
         </div>
       </div>
 
       {/* Expandable Evidence Section */}
-      {relatedEvents.length > 0 && (
-        <div className="border-t border-border/50 bg-page/30">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="w-full flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-muted hover:text-primary transition-colors focus:outline-none"
-          >
-            {expanded ? <MinusSquare size={14} /> : <PlusSquare size={14} />}
-            <span className="tracking-wide uppercase text-[10px]">Evidence Logs (Last {relatedEvents.length} Events)</span>
-          </button>
+      <div className="border-t border-border/50 bg-page/30">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-muted hover:text-primary transition-colors focus:outline-none"
+        >
+          {expanded ? <MinusSquare size={14} /> : <PlusSquare size={14} />}
+          <span className="tracking-wide uppercase text-[10px]">Evidence Logs (User Context)</span>
+        </button>
 
-          {expanded && (
-            <div className="px-5 pb-5">
+        {expanded && (
+          <div className="px-5 pb-5">
+            {loadingEvents ? (
+              <div className="text-xs text-muted py-2">Loading context...</div>
+            ) : relatedEvents.length > 0 ? (
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-border/30 text-[9px] uppercase tracking-wider text-muted">
@@ -175,9 +210,9 @@ function AlertCard({ alert }: { alert: any }) {
                     <tr key={evt.id} className="border-b border-border/10 hover:bg-page/50 transition-colors">
                       <td className="py-2.5 text-blue-500">EVT-{evt.id.toString().padStart(4, '0')}</td>
                       <td className="py-2.5">{evt.event_type}</td>
-                      <td className="py-2.5">{evt.source_ip}</td>
+                      <td className="py-2.5">{evt.source_ip || '-'}</td>
                       <td className="py-2.5">
-                        <span className={evt.severity === 'HIGH' ? 'text-red-400' : 'text-orange-400'}>
+                        <span className={evt.severity === 'HIGH' || evt.severity === 'CRITICAL' ? 'text-red-400' : 'text-orange-400'}>
                           {evt.severity}
                         </span>
                       </td>
@@ -185,10 +220,12 @@ function AlertCard({ alert }: { alert: any }) {
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-        </div>
-      )}
+            ) : (
+              <div className="text-xs text-muted py-2">No related events found for this user recently.</div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,13 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Bell, Moon, Sun, MoreVertical, Activity, AlertTriangle, Users, Menu, Sliders } from 'lucide-react';
-import { mockAlerts, mockEvents } from '../../mock/mockAuth';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useSidebar } from '../../context/SidebarContext';
+import { useSiem } from '../../hooks/useSiem';
+import { getEvents } from '../../api/siem';
 
 export default function LiveMonitor() {
   const { theme, toggleTheme } = useThemeContext();
   const [searchTerm, setSearchTerm] = useState('');
   const { toggleSidebar } = useSidebar();
+  const { alerts, loading: alertsLoading, baselines, lastMessage } = useSiem();
+  
+  const [totalEvents, setTotalEvents] = useState(0);
+
+  useEffect(() => {
+    // Just fetch the total count quickly by asking for 1 event
+    getEvents({ per_page: 1 })
+      .then(res => setTotalEvents(res.total))
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (lastMessage) {
+      // Bulletproof fallback: whenever the websocket pulses (alert or event),
+      // we quietly fetch the exact total from the database to guarantee 
+      // the number is perfectly accurate even if the user ran a script 
+      // that generated 20 events but only 1 alert.
+      getEvents({ per_page: 1 })
+        .then(res => setTotalEvents(res.total))
+        .catch(console.error);
+    }
+  }, [lastMessage]);
+
+  const openAlertsCount = alerts.filter(a => a.status === 'OPEN').length;
+  const criticalAlertsCount = alerts.filter(a => a.severity === 'CRITICAL' && a.status === 'OPEN').length;
+
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-page text-primary transition-colors duration-200">
 
@@ -56,29 +83,29 @@ export default function LiveMonitor() {
         <div className="grid grid-cols-1 md:grid-cols-2 mt-2 lg:grid-cols-4 gap-4 mb-6">
           <KPICard
             title="EVENTS TODAY"
-            value={mockEvents.length > 0 ? "124,802" : "0"}
-            sub="12.5%"
+            value={totalEvents.toLocaleString()}
+            sub="Real-time"
             subType="positive"
             icon={<Activity size={16} />}
           />
           <KPICard
             title="OPEN ALERTS"
-            value={mockAlerts.length.toString()}
-            sub={`Critical: ${mockAlerts.filter(a => a.severity === 'CRITICAL').length}`}
+            value={openAlertsCount.toString()}
+            sub={`Critical: ${criticalAlertsCount}`}
             subType="negative"
             icon={<AlertTriangle size={16} />}
             alert
           />
           <KPICard
             title="ACTIVE USERS"
-            value="1,104"
-            sub="Across 12 regions"
+            value={baselines.length.toString()}
+            sub="Baselines tracked"
             subType="neutral"
             icon={<Users size={16} />}
           />
           <KPICard
             title="DETECTION RULES"
-            value="856"
+            value="8"
             sub="Active & Validated"
             subType="neutral"
             icon={<Sliders size={16} />}
@@ -110,41 +137,31 @@ export default function LiveMonitor() {
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {mockAlerts.slice(0, 5).map((alert) => (
+                  {alertsLoading ? (
+                    <tr>
+                      <td colSpan={4} className="px-5 py-4 text-center text-muted">Loading alerts...</td>
+                    </tr>
+                  ) : alerts.slice(0, 8).map((alert) => (
                     <tr key={alert.id} className="border-b border-border/30 hover:bg-page/50 transition-colors group">
                       <td className="px-5 py-4 font-mono text-xs text-muted group-hover:text-primary transition-colors">
-                        {alert.created_at.split(' ')[1] || '00:00:00'}
+                        {new Date(alert.created_at).toLocaleTimeString()}
                       </td>
-                      <td className="px-5 py-4 font-medium">
-                        {alert.description.split(' ').slice(0, 5).join(' ')}...
+                      <td className="px-5 py-4 font-medium" title={alert.description}>
+                        {alert.description.split(' ').slice(0, 8).join(' ')}...
                       </td>
                       <td className="px-5 py-4">
                         <SeverityBadge level={alert.severity} />
                       </td>
                       <td className="px-5 py-4 font-mono text-xs text-muted">
-                        {alert.user_id === "1" ? "10.8.0.10" : "192.168.1.105"}
+                        {alert.username || alert.user_id?.split('-')[0] || '-'}
                       </td>
                     </tr>
                   ))}
-                  {/* Hardcoded rows to fill space matching the screenshot */}
-                  <tr className="border-b border-border/30 hover:bg-page/50 transition-colors group">
-                    <td className="px-5 py-4 font-mono text-xs text-muted group-hover:text-primary transition-colors">14:19:30.88</td>
-                    <td className="px-5 py-4 font-medium">Anomalous Data Egress</td>
-                    <td className="px-5 py-4"><SeverityBadge level="HIGH" /></td>
-                    <td className="px-5 py-4 font-mono text-xs text-muted">NODE-EX-04</td>
-                  </tr>
-                  <tr className="border-b border-border/30 hover:bg-page/50 transition-colors group">
-                    <td className="px-5 py-4 font-mono text-xs text-muted group-hover:text-primary transition-colors">14:15:12.44</td>
-                    <td className="px-5 py-4 font-medium">Port Scan Detected (Internal)</td>
-                    <td className="px-5 py-4"><SeverityBadge level="MEDIUM" /></td>
-                    <td className="px-5 py-4 font-mono text-xs text-muted">10.0.4.12</td>
-                  </tr>
-                  <tr className="border-b border-border/30 hover:bg-page/50 transition-colors group">
-                    <td className="px-5 py-4 font-mono text-xs text-muted group-hover:text-primary transition-colors">14:12:01.04</td>
-                    <td className="px-5 py-4 font-medium">New Root User Provisioned</td>
-                    <td className="px-5 py-4"><SeverityBadge level="CRITICAL" /></td>
-                    <td className="px-5 py-4 font-mono text-xs text-muted">IAM-SEC-01</td>
-                  </tr>
+                  {(!alertsLoading && alerts.length === 0) && (
+                    <tr>
+                      <td colSpan={4} className="px-5 py-4 text-center text-muted">No recent alerts</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

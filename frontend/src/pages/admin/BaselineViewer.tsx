@@ -1,20 +1,39 @@
-import { useState } from 'react';
-import { Search, Bell, Moon, Sun, MoreVertical, AlertTriangle, ChevronDown, Menu } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Bell, Moon, Sun, MoreVertical, AlertTriangle, Menu } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useSidebar } from '../../context/SidebarContext';
+import { useSiem } from '../../hooks/useSiem';
+import { getEvents } from '../../api/siem';
+import type { SiemEvent } from '../../types/siem.types';
+
 export default function BaselineViewer() {
   const { theme, toggleTheme } = useThemeContext();
   const [searchTerm, setSearchTerm] = useState('');
   const { toggleSidebar } = useSidebar();
-  const auditTrail = [
-    { time: '2023-10-24 22:14:05', tag: 'AUTH_SUCC', color: 'text-blue-500', detail: 'User Fatima Khaldi initiated remote session from 45.33.22.11' },
-    { time: '2023-10-24 22:15:12', tag: 'FILE_ACCESS', color: 'text-orange-500', detail: 'Accessed non-standard directory: /etc/secure_vault/keys/' },
-    { time: '2023-10-24 22:18:44', tag: 'SEC_ALERT', color: 'text-red-500', detail: 'Confidence score drop detected: 92% -> 28% (Deviation: Location/Time)' },
-  ];
+  
+  const { baselines, loading: baselinesLoading } = useSiem();
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [userEvents, setUserEvents] = useState<SiemEvent[]>([]);
+  
+  useEffect(() => {
+    if (baselines.length > 0 && !selectedUserId) {
+      setSelectedUserId(baselines[0].user_id);
+    }
+  }, [baselines, selectedUserId]);
 
-  const filteredAudit = auditTrail.filter(item =>
-    item.detail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.tag.toLowerCase().includes(searchTerm.toLowerCase())
+  useEffect(() => {
+    if (selectedUserId) {
+      getEvents({ user_id: selectedUserId, per_page: 50 })
+        .then(res => setUserEvents(res.events))
+        .catch(console.error);
+    }
+  }, [selectedUserId]);
+
+  const activeBaseline = baselines.find(b => b.user_id === selectedUserId);
+
+  const filteredAudit = userEvents.filter(item =>
+    item.event_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.source_ip && item.source_ip.includes(searchTerm))
   );
 
   return (
@@ -28,10 +47,19 @@ export default function BaselineViewer() {
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold tracking-wide text-blue-500">Baseline Viewer</h1>
           <span className="text-muted">/</span>
-          <button className="flex items-center gap-1.5 px-2 py-1 bg-page/50 border border-border/50 rounded-md text-xs font-medium hover:bg-page transition-colors">
-            User: Fatima Khaldi
-            <ChevronDown size={14} className="text-muted" />
-          </button>
+          <select 
+            className="flex items-center gap-1.5 px-2 py-1 bg-page/50 border border-border/50 rounded-md text-xs font-medium hover:bg-page transition-colors outline-none"
+            value={selectedUserId}
+            onChange={(e) => setSelectedUserId(e.target.value)}
+          >
+            {baselinesLoading ? (
+               <option value="">Loading...</option>
+            ) : baselines.length === 0 ? (
+               <option value="">No baselines</option>
+            ) : baselines.map(b => (
+               <option key={b.user_id} value={b.user_id}>User: {b.username || b.user_id}</option>
+            ))}
+          </select>
         </div>
 
         <div className="flex items-center gap-4">
@@ -63,67 +91,69 @@ export default function BaselineViewer() {
       <div className="flex-1 overflow-auto p-6 flex flex-col gap-6">
 
         {/* Warning Banner */}
-        <div className="bg-amber-500/10 border-l-[3px] border-amber-500 p-4 rounded-r-lg flex items-center justify-between">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={16} />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-bold text-amber-600 dark:text-amber-500 tracking-wide">Confidence Level Critical</span>
-              <span className="text-xs text-amber-600/80 dark:text-amber-500/80">
-                Current baseline confidence for Fatima Khaldi has dropped to 28%. Anomalous behavior detected outside 7-day norms.
-              </span>
+        {activeBaseline && activeBaseline.confidence < 0.5 && (
+          <div className="bg-amber-500/10 border-l-[3px] border-amber-500 p-4 rounded-r-lg flex items-center justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={16} />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-bold text-amber-600 dark:text-amber-500 tracking-wide">Confidence Level Low</span>
+                <span className="text-xs text-amber-600/80 dark:text-amber-500/80">
+                  Current baseline confidence for {activeBaseline.username || activeBaseline.user_id} is {(activeBaseline.confidence * 100).toFixed(0)}%. Anomalous behavior detected outside normal bounds.
+                </span>
+              </div>
             </div>
+            <button className="text-[10px] font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 hover:text-amber-700 dark:hover:text-amber-400 transition-colors">
+              RE-VERIFY
+            </button>
           </div>
-          <button className="text-[10px] font-bold tracking-widest uppercase text-amber-600 dark:text-amber-500 hover:text-amber-700 dark:hover:text-amber-400 transition-colors">
-            RE-VERIFY
-          </button>
-        </div>
+        )}
 
         {/* Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="bg-card border border-border px-5 py-4 rounded-lg flex flex-col items-center justify-center shadow-sm">
             <span className="text-[9px] uppercase tracking-wider font-bold text-muted mb-4 self-start">Confidence Ring</span>
-            <div className="w-24 h-24 rounded-full border-[6px] border-orange-500 flex flex-col items-center justify-center">
-              <span className="text-2xl font-bold tracking-tight">28%</span>
+            <div className={`w-24 h-24 rounded-full border-[6px] flex flex-col items-center justify-center ${(activeBaseline?.confidence ?? 0) < 0.5 ? 'border-orange-500' : 'border-blue-500'}`}>
+              <span className="text-2xl font-bold tracking-tight">{activeBaseline ? (activeBaseline.confidence * 100).toFixed(0) : 0}%</span>
               <span className="text-[8px] tracking-wider uppercase text-muted font-bold">Confidence</span>
             </div>
           </div>
 
           <div className="bg-card border border-border px-5 py-4 rounded-lg flex flex-col justify-between shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Average Session</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Avg Login Hour</span>
             <div className="flex flex-col gap-1">
-              <span className="text-2xl font-bold font-mono tracking-tight">04:12:05</span>
-              <span className="text-[10px] font-bold text-red-500 flex items-center gap-1">
-                <TrendingIcon type="down" /> - 15% from baseline
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-card border border-border px-5 py-4 rounded-lg flex flex-col justify-between shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Data Egress</span>
-            <div className="flex flex-col gap-1">
-              <span className="text-2xl font-bold tracking-tight">1.42 GB</span>
+              <span className="text-2xl font-bold font-mono tracking-tight">{activeBaseline ? Math.round(activeBaseline.avg_login_hour).toString().padStart(2, '0') + ':00' : '--:--'}</span>
               <span className="text-[10px] font-bold text-blue-500 flex items-center gap-1">
-                — Within expected range
+                 Estimated daily start time
               </span>
             </div>
           </div>
 
           <div className="bg-card border border-border px-5 py-4 rounded-lg flex flex-col justify-between shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Auth Attempts</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Avg Files / Day</span>
             <div className="flex flex-col gap-1">
-              <span className="text-2xl font-bold tracking-tight">14</span>
-              <span className="text-[10px] font-bold text-red-500 flex items-center gap-1">
-                <AlertTriangle size={10} /> 6 failed today
+              <span className="text-2xl font-bold tracking-tight">{activeBaseline?.avg_files_day ? activeBaseline.avg_files_day.toFixed(1) : '0'}</span>
+              <span className="text-[10px] font-bold text-blue-500 flex items-center gap-1">
+                — Based on historical activity
               </span>
             </div>
           </div>
 
           <div className="bg-card border border-border px-5 py-4 rounded-lg flex flex-col justify-between shadow-sm">
-            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">App Usage</span>
+            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Total Monitored Tx</span>
             <div className="flex flex-col gap-1">
-              <span className="text-2xl font-bold tracking-tight">92%</span>
+              <span className="text-2xl font-bold tracking-tight">{activeBaseline?.tx_count || 0}</span>
               <span className="text-[10px] font-bold text-muted flex items-center gap-1">
-                Standard load
+                Events shaping this baseline
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-card border border-border px-5 py-4 rounded-lg flex flex-col justify-between shadow-sm">
+            <span className="text-[9px] uppercase tracking-wider font-bold text-muted">Messages / Day</span>
+            <div className="flex flex-col gap-1">
+              <span className="text-2xl font-bold tracking-tight">{activeBaseline?.avg_messages_day ? activeBaseline.avg_messages_day.toFixed(1) : '0'}</span>
+              <span className="text-[10px] font-bold text-muted flex items-center gap-1">
+                Communication volume
               </span>
             </div>
           </div>
@@ -135,19 +165,20 @@ export default function BaselineViewer() {
           <div className="bg-card border border-border px-6 py-5 rounded-lg shadow-sm flex flex-col">
             <span className="text-[10px] font-bold tracking-wider uppercase text-primary mb-4">Baseline: Known IPs</span>
             <div className="flex flex-wrap gap-2 mb-8 mt-2">
-              {['192.168.1.105', '10.0.4.12', '172.16.254.1', '100.0.115.45', '192.168.1.106', '8.8.8.8'].map(ip => (
+              {activeBaseline?.known_ips?.length ? activeBaseline.known_ips.map(ip => (
                 <span key={ip} className="px-2.5 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-mono font-bold rounded">
                   {ip}
                 </span>
-              ))}
+              )) : (
+                <span className="text-xs text-muted">No known IPs yet</span>
+              )}
             </div>
 
             <div className="border border-border/50 rounded-lg p-4 bg-page/50 flex flex-col gap-2 mt-auto">
               <div className="flex items-center justify-between">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-muted">New IP Detected</span>
-                <span className="px-1.5 py-0.5 bg-red-500/10 text-red-500 text-[8px] font-bold uppercase rounded border border-red-500/20">Critical</span>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-muted">Last Updated</span>
               </div>
-              <span className="font-mono text-xs font-bold text-red-500">45.33.22.11 (Tokyo, JP)</span>
+              <span className="font-mono text-xs font-bold text-primary">{activeBaseline?.last_updated ? new Date(activeBaseline.last_updated).toLocaleString() : 'Never'}</span>
             </div>
           </div>
 
@@ -191,22 +222,22 @@ export default function BaselineViewer() {
 
         {/* Audit Trail */}
         <div className="bg-card border border-border px-6 py-5 rounded-lg shadow-sm flex flex-col">
-          <span className="text-[10px] font-bold tracking-wider uppercase text-primary mb-4">Anomaly Audit Trail</span>
+          <span className="text-[10px] font-bold tracking-wider uppercase text-primary mb-4">Anomaly Audit Trail (Recent Events)</span>
           <div className="flex flex-col">
             <div className="border-b border-border/50 pb-2 mb-2 flex">
               <span className="w-40 text-[9px] font-bold text-muted uppercase tracking-wider">Timestamp</span>
-              <span className="w-32 text-[9px] font-bold text-muted uppercase tracking-wider">Action</span>
-              <span className="flex-1 text-[9px] font-bold text-muted uppercase tracking-wider">Detail</span>
+              <span className="w-40 text-[9px] font-bold text-muted uppercase tracking-wider">Event Type</span>
+              <span className="flex-1 text-[9px] font-bold text-muted uppercase tracking-wider">Source IP / Detail</span>
             </div>
-            {filteredAudit.map((item, i) => (
-              <div key={i} className="py-2.5 flex items-start sm:items-center text-xs group hover:bg-page/50 -mx-2 px-2 rounded-md transition-colors border-b border-border/30 last:border-0">
-                <span className="w-40 font-mono text-muted group-hover:text-primary transition-colors">{item.time}</span>
-                <span className={`w-32 font-mono font-bold ${item.color}`}>{item.tag}</span>
-                <span className="flex-1 font-medium">{item.detail}</span>
+            {filteredAudit.map((evt) => (
+              <div key={evt.id} className="py-2.5 flex items-start sm:items-center text-xs group hover:bg-page/50 -mx-2 px-2 rounded-md transition-colors border-b border-border/30 last:border-0">
+                <span className="w-40 font-mono text-muted group-hover:text-primary transition-colors">{new Date(evt.created_at).toLocaleString()}</span>
+                <span className={`w-40 font-mono font-bold ${evt.severity === 'CRITICAL' || evt.severity === 'HIGH' ? 'text-red-500' : 'text-blue-500'}`}>{evt.event_type}</span>
+                <span className="flex-1 font-medium">{evt.source_ip || '-'} {Object.keys(evt.payload || {}).length > 0 ? `— ${JSON.stringify(evt.payload)}` : ''}</span>
               </div>
             ))}
             {filteredAudit.length === 0 && (
-              <div className="py-8 text-center text-muted text-xs">No audit events match your search.</div>
+              <div className="py-8 text-center text-muted text-xs">No audit events found for this user.</div>
             )}
           </div>
         </div>
@@ -216,20 +247,3 @@ export default function BaselineViewer() {
 }
 
 // Subcomponents
-function TrendingIcon({ type }: { type: 'up' | 'down' }) {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-      {type === 'up' ? (
-        <>
-          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
-          <polyline points="16 7 22 7 22 13" />
-        </>
-      ) : (
-        <>
-          <polyline points="22 17 13.5 8.5 8.5 13.5 2 7" />
-          <polyline points="16 17 22 17 22 11" />
-        </>
-      )}
-    </svg>
-  );
-}

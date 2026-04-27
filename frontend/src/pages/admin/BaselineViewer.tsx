@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Bell, Moon, Sun, MoreVertical, AlertTriangle, Menu } from 'lucide-react';
+import { Search, Moon, Sun, MoreVertical, AlertTriangle, Menu } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSiem } from '../../hooks/useSiem';
 import { getEvents } from '../../api/siem';
 import type { SiemEvent } from '../../types/siem.types';
+import NotificationDropdown from '../../components/NotificationDropdown';
 
 export default function BaselineViewer() {
   const { theme, toggleTheme } = useThemeContext();
@@ -75,9 +76,7 @@ export default function BaselineViewer() {
               className="w-full pl-9 pr-4 py-1.5 bg-page border border-border rounded-md text-xs placeholder:text-muted focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
-          <button className="text-muted hover:text-primary transition-colors p-1">
-            <Bell size={16} />
-          </button>
+          <NotificationDropdown />
           <button onClick={toggleTheme} className="text-muted hover:text-primary transition-colors p-1">
             {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
           </button>

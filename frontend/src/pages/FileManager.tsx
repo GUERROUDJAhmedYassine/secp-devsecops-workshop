@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import {
   Search,
-  Bell,
   Moon,
   Sun,
   MoreVertical,
@@ -14,9 +13,6 @@ import {
   Key,
   Image as ImageIcon,
   File as FileIcon,
-  CheckCircle,
-  Shield,
-  Clock,
   Menu,
   Edit3,
   Eye,
@@ -38,6 +34,7 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { DEPARTMENT_OPTIONS, getPreferredDepartment } from '../lib/departments';
 import CollaborationEditor from '../components/CollaborationEditor';
 import FilePreviewModal from '../components/FilePreviewModal';
+import NotificationDropdown from '../components/NotificationDropdown';
 import { addUserToRoom, createProjectRoom, getProjectRooms, getRoomMembers, removeUserFromRoom } from '../api/messaging';
 import { listDirectoryUsers } from '../api/auth';
 import type { Room } from '../types/messaging.types';
@@ -151,7 +148,7 @@ export default function FileManager() {
   const [bucketFilter, setBucketFilter] = useState('All Buckets');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const activeBucketFilter = selectedProjectId ? projectBucket(selectedProjectId) : bucketFilter;
-  const { files, storage, vaultInfo, loading, addFile, removeFile, refreshFiles } = useFiles(activeBucketFilter);
+  const { files, storage, loading, addFile, removeFile, refreshFiles } = useFiles(activeBucketFilter);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
@@ -687,7 +684,7 @@ export default function FileManager() {
               className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7] w-72 transition-all placeholder:text-muted"
             />
           </div>
-          <button className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors"><Bell className="w-5 h-5" /></button>
+          <NotificationDropdown />
           <button onClick={toggleTheme} className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
@@ -912,6 +909,7 @@ export default function FileManager() {
                 const isEditable = supportsCollaboration(file.mime_type, file.filename);
                 const isPreviewable = supportsPreview(file.mime_type, file.filename);
                 const projectRoomId = roomIdFromBucket(file.bucket);
+                const canDeleteFile = !projectRoomId || isManagerOrAbove || isAdmin;
 
                 return (
                   <tr key={file.id} className="hover:bg-page transition-colors group">
@@ -946,9 +944,11 @@ export default function FileManager() {
                         <button onClick={() => downloadFile(file.id)} className="p-2 text-muted hover:text-[#4f8ef7] hover:bg-[#4f8ef7]/10 rounded-lg transition-colors" title="Download">
                           <Download className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete(file.id)} className="p-2 text-muted hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded-lg transition-colors" title="Delete">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canDeleteFile && (
+                          <button onClick={() => handleDelete(file.id)} className="p-2 text-muted hover:text-[#ef4444] hover:bg-[#ef4444]/10 rounded-lg transition-colors" title="Delete">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                         {projectRoomId && (
                           <button
                             onClick={() => openProjectChat(projectRoomId)}
@@ -966,45 +966,6 @@ export default function FileManager() {
             </tbody>
           </table>
         </div>
-
-        {vaultInfo && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-2">
-            <div className="p-5 bg-card border border-border rounded-xl flex flex-col justify-between hover:border-[#4f8ef7]/30 transition-colors shadow-sm cursor-pointer min-h-[8rem]">
-              <span className="text-xs font-bold tracking-wider uppercase text-muted">Bucket Health</span>
-              <div>
-                <div className="text-lg font-bold text-primary mb-3">{vaultInfo.bucket_health.status}</div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-3.5 h-3.5 text-[#22c55e]" />
-                  <span className="text-[11px] font-bold text-[#22c55e]">{vaultInfo.bucket_health.availability} Availability</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-5 bg-card border border-border rounded-xl flex flex-col justify-between hover:border-[#4f8ef7]/30 transition-colors shadow-sm cursor-pointer h-32">
-              <span className="text-xs font-bold tracking-wider uppercase text-muted">Active Encryption</span>
-              <div>
-                <div className="text-lg font-bold text-primary mb-3">{vaultInfo.encryption}</div>
-                <div className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-[#4f8ef7]" />
-                  <span className="text-[11px] font-bold text-[#4f8ef7]">{vaultInfo.hsm_enabled ? 'Hardware Security Module Enabled' : 'Standard Software Encryption'}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-5 bg-card border border-border rounded-xl flex flex-col justify-between hover:border-[#4f8ef7]/30 transition-colors shadow-sm cursor-pointer h-32">
-              <span className="text-xs font-bold tracking-wider uppercase text-muted">Recent Activity</span>
-              <div>
-                <div className="text-sm font-semibold text-primary mb-2 leading-snug">
-                  <span className="text-[#4f8ef7]">{vaultInfo.recent_activity.user}</span> {vaultInfo.recent_activity.action}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-3.5 h-3.5 text-muted" />
-                  <span className="text-[11px] font-bold text-muted">{formatDate(vaultInfo.recent_activity.time_utc)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

@@ -11,6 +11,13 @@ import type {
   EmailMessage,
 } from '../types/email.types';
 
+export const MAIL_SYNC_EVENT = 'secp:mail-sync';
+
+function broadcastMailSync() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(MAIL_SYNC_EVENT));
+}
+
 interface MailListParams {
   page?: number;
   perPage?: number;
@@ -62,11 +69,15 @@ export async function getEmail(
   emailId: string,
   options: { markRead?: boolean } = {},
 ): Promise<EmailMessage> {
-  return apiGet<EmailMessage>(
+  const email = await apiGet<EmailMessage>(
     withQuery(`${MAIL_BASE}/mail/${emailId}`, {
       mark_read: String(options.markRead ?? true),
     }),
   );
+  if (options.markRead ?? true) {
+    broadcastMailSync();
+  }
+  return email;
 }
 
 export async function sendEmail(data: EmailComposePayload): Promise<EmailMessage> {
@@ -79,11 +90,14 @@ export async function sendEmail(data: EmailComposePayload): Promise<EmailMessage
     formData.append('attachment', data.attachment);
   }
 
-  return apiPost<EmailMessage>(`${MAIL_BASE}/mail/send`, formData);
+  const created = await apiPost<EmailMessage>(`${MAIL_BASE}/mail/send`, formData);
+  broadcastMailSync();
+  return created;
 }
 
 export async function deleteEmail(emailId: string): Promise<void> {
   await apiDelete(`${MAIL_BASE}/mail/${emailId}`);
+  broadcastMailSync();
 }
 
 export async function downloadEmailAttachment(

@@ -28,6 +28,8 @@ def bucket_to_dir(bucket: str, user: CurrentUser) -> Path:
         return root / "personal" / str(user.id)
     if bucket == "shared":
         return root / "shared"
+    if bucket == "admin":
+        return root / "admin"
     if bucket.startswith("team/"):
         _, dept = bucket.split("/", 1)
         return root / "team" / dept
@@ -65,9 +67,9 @@ async def is_room_member(pool: asyncpg.Pool, room_id: str, user_id: uuid.UUID) -
 async def ensure_bucket_allowed_for_upload(bucket: str, user: CurrentUser, pool: asyncpg.Pool) -> None:
     if bucket == "personal":
         return
-    if bucket == "shared":
+    if bucket == "shared" or bucket == "admin":
         if user.role != "IT_ADMIN":
-            raise HTTPException(status_code=403, detail="Shared bucket is IT_ADMIN only")
+            raise HTTPException(status_code=403, detail=f"{bucket} bucket is IT_ADMIN only")
         return
     if bucket.startswith("team/"):
         dept = bucket.split("/", 1)[1]

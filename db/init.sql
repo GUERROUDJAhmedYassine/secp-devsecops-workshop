@@ -16,6 +16,7 @@ CREATE TABLE app.users (
     locked_until    TIMESTAMP        NULL,
     vpn_public_key  TEXT             NULL,
     vpn_internal_ip INET             NULL UNIQUE,
+    vpn_config_file_id TEXT          NULL,
     last_login_at   TIMESTAMP        NULL,
     created_at      TIMESTAMP        DEFAULT NOW()
 );

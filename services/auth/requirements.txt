@@ -6,3 +6,5 @@ pydantic[email]
 bcrypt
 PyJWT
 cryptography
+httpx
+psutil

@@ -7,6 +7,7 @@ import Webmail from './pages/Webmail.tsx';
 import Messaging from './pages/Messaging.tsx';
 import UserProfile from './pages/UserProfile.tsx';
 import Login from './pages/Login.tsx';
+import AdminLogin from './pages/AdminLogin.tsx';
 import { useTheme } from './hooks/useTheme';
 import { ThemeContext } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
@@ -53,6 +54,10 @@ function App() {
         <SidebarProvider>
           <Routes>
             <Route path="/" element={<Login />} />
+            <Route 
+              path={import.meta.env.VITE_ADMIN_GATEWAY_PATH || "/admin-login-default"} 
+              element={<AdminLogin />} 
+            />
             {/* All authenticated routes */}
             <Route element={<ProtectedRoute />}>
               <Route path="/*" element={<AuthenticatedLayout />} />

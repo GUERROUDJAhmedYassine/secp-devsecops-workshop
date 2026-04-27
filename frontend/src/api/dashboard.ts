@@ -32,5 +32,5 @@ export async function getStats(): Promise<Record<string, unknown>> {
 }
 
 export async function getSystemMonitor(): Promise<SystemMonitorInfo> {
-  return apiGet<SystemMonitorInfo>(`${SIEM_BASE}/dashboard/system`);
+  return apiGet<SystemMonitorInfo>(`${AUTH_BASE}/auth/system-health`);
 }

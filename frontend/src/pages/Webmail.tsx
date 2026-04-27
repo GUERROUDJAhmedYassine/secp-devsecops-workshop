@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowLeft,
-  Bell,
   Download,
   FileText,
   Filter,
@@ -36,6 +35,7 @@ import {
 import { listDirectoryUsers } from '../api/auth';
 import type { EmailComposePayload, EmailMessage, MailFolder } from '../types/email.types';
 import type { DirectoryUser } from '../types/user.types';
+import NotificationDropdown from '../components/NotificationDropdown';
 
 const EMPTY_COMPOSE = { to: '', subject: '', body: '' };
 
@@ -85,22 +85,45 @@ interface ComposeModalProps {
   seed: Pick<EmailComposePayload, 'to' | 'subject' | 'body'>;
   error: string | null;
   sending: boolean;
+  recipients: DirectoryUser[];
+  recipientLoading: boolean;
+  recipientError: string | null;
   onClose: () => void;
   onSend: (payload: EmailComposePayload) => Promise<void>;
 }
 
-function ComposeModal({ seed, error, sending, onClose, onSend }: ComposeModalProps) {
+function ComposeModal({
+  seed,
+  error,
+  sending,
+  recipients,
+  recipientLoading,
+  recipientError,
+  onClose,
+  onSend,
+}: ComposeModalProps) {
   const [to, setTo] = useState(seed.to);
   const [subject, setSubject] = useState(seed.subject);
   const [body, setBody] = useState(seed.body);
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const normalizedRecipientQuery = to.trim().toLowerCase();
+  const matchingRecipients = useMemo(() => {
+    if (!normalizedRecipientQuery) return [];
+    return recipients
+      .filter((user) =>
+        `${user.username} ${user.email} ${user.department ?? ''}`.toLowerCase().includes(normalizedRecipientQuery),
+      )
+      .slice(0, 6);
+  }, [normalizedRecipientQuery, recipients]);
 
   useEffect(() => {
     setTo(seed.to);
     setSubject(seed.subject);
     setBody(seed.body);
     setAttachment(null);
+    setShowSuggestions(false);
 
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = '';
@@ -144,14 +167,62 @@ function ComposeModal({ seed, error, sending, onClose, onSend }: ComposeModalPro
 
         <label className="block border-b border-border px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted">
           To:
-          <input
-            type="email"
-            value={to}
-            onChange={(event) => setTo(event.target.value)}
-            className="mt-2 w-full border-none bg-transparent text-sm font-medium text-primary outline-none placeholder:text-muted"
-            placeholder="security-team@secp-platform.com"
-            required
-          />
+          <div className="relative mt-2">
+            <input
+              type="email"
+              value={to}
+              onChange={(event) => {
+                setTo(event.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => {
+                window.setTimeout(() => setShowSuggestions(false), 120);
+              }}
+              className="w-full border-none bg-transparent text-sm font-medium text-primary outline-none placeholder:text-muted"
+              placeholder="security-team@secp-platform.com"
+              required
+            />
+
+            {showSuggestions && (normalizedRecipientQuery || recipientLoading || recipientError) && (
+              <div className="absolute left-0 right-0 top-full z-20 mt-3 overflow-hidden rounded-xl border border-border bg-page shadow-2xl">
+                {recipientLoading ? (
+                  <div className="px-4 py-3 text-xs font-semibold text-muted">
+                    Loading directory...
+                  </div>
+                ) : recipientError ? (
+                  <div className="px-4 py-3 text-xs font-semibold text-red-500">
+                    {recipientError}
+                  </div>
+                ) : matchingRecipients.length === 0 ? (
+                  <div className="px-4 py-3 text-xs font-semibold text-muted">
+                    No matching emails found.
+                  </div>
+                ) : (
+                  matchingRecipients.map((user) => (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        setTo(user.email);
+                        setShowSuggestions(false);
+                      }}
+                      className="flex w-full items-center justify-between border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-card"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-primary">{user.username}</div>
+                        <div className="truncate text-xs font-semibold text-muted">{user.email}</div>
+                      </div>
+                      <div className="ml-4 text-[10px] font-bold uppercase tracking-widest text-[#4f8ef7]">
+                        {user.department ?? user.role}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </label>
 
         <label className="block border-b border-border px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted">
@@ -329,6 +400,13 @@ export default function Webmail() {
     void refreshMailbox('inbox', null);
   }, []);
 
+  useEffect(() => {
+    if (!composeOpen && !forwardOpen) return;
+    if (directoryLoading || directory.length > 0) return;
+
+    void loadDirectory();
+  }, [composeOpen, directory.length, directoryLoading, forwardOpen]);
+
   async function refreshMailbox(nextFolder: MailFolder = folder, preferredId: string | null = selectedId) {
     setLoading(true);
     setError(null);
@@ -434,11 +512,17 @@ export default function Webmail() {
     setDirectoryError(null);
     setForwardQuery('');
     setForwardSelected(null);
+    await loadDirectory();
+  }
+
+  async function loadDirectory() {
+    if (directoryLoading) return;
 
     setDirectoryLoading(true);
+    setDirectoryError(null);
     try {
       const users = await listDirectoryUsers();
-      setDirectory(users.filter((u) => u.email));
+      setDirectory(users.filter((u) => u.is_active && Boolean(u.email)));
     } catch (dirError) {
       setDirectory([]);
       setDirectoryError(errorMessage(dirError));
@@ -490,6 +574,7 @@ export default function Webmail() {
                 onClick={() => {
                   setComposeSeed(EMPTY_COMPOSE);
                   setComposeError(null);
+                  setDirectoryError(null);
                   setComposeOpen(true);
                 }}
                 className="inline-flex items-center gap-2 rounded-md bg-[#4f8ef7] px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-[#4f8ef7]/20 hover:bg-[#3b7ae5]"
@@ -512,9 +597,7 @@ export default function Webmail() {
               />
             </div>
 
-            <button className="rounded-md p-2 text-muted hover:bg-card hover:text-primary" type="button" aria-label="Notifications">
-              <Bell className="h-5 w-5" />
-            </button>
+            <NotificationDropdown />
             <button onClick={toggleTheme} className="rounded-md p-2 text-muted hover:bg-card hover:text-primary" type="button" aria-label="Toggle theme">
               {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </button>
@@ -757,6 +840,7 @@ export default function Webmail() {
                         body: `\n\n--- Original message ---\n${selectedEmail.body}`,
                       });
                       setComposeError(null);
+                      setDirectoryError(null);
                       setComposeOpen(true);
                     }}
                     disabled={!selectedEmail}
@@ -885,6 +969,9 @@ export default function Webmail() {
           seed={composeSeed}
           error={composeError}
           sending={sending}
+          recipients={directory}
+          recipientLoading={directoryLoading}
+          recipientError={directoryError}
           onClose={() => setComposeOpen(false)}
           onSend={handleSend}
         />

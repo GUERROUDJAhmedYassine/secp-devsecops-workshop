@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell,
   Moon,
   Sun,
   MoreVertical,
@@ -18,8 +17,9 @@ import { useThemeContext } from '../context/ThemeContext';
 import { useSidebar } from '../context/SidebarContext';
 import { useAuth } from '../hooks/useAuth';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import NotificationDropdown from '../components/NotificationDropdown';
 import { getSystemMonitor, type SystemMonitorInfo } from '../api/dashboard';
-import { getInbox } from '../api/email';
+import { MAIL_SYNC_EVENT, getInbox } from '../api/email';
 import { getFiles } from '../api/files';
 import { getDmUnreadCounts, getMessages, getOnlineUsers, getRooms } from '../api/messaging';
 import { MSG_WS_URL } from '../lib/constants';
@@ -104,7 +104,6 @@ export default function Dashboard() {
   const { user, isAdmin, isLoading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
-  const [loadWarning, setLoadWarning] = useState<string | null>(null);
   const [emails, setEmails] = useState<EmailMessage[]>([]);
   const [unreadEmailCount, setUnreadEmailCount] = useState(0);
   const [files, setFiles] = useState<SecureFile[]>([]);
@@ -144,10 +143,6 @@ export default function Dashboard() {
     () => rooms.filter((room) => Boolean(room.last_message_at)).length,
     [rooms],
   );
-  const projectRoomCount = useMemo(
-    () => rooms.filter((room) => room.is_project).length,
-    [rooms],
-  );
   const healthyServiceCount = useMemo(
     () => Object.values(serviceHealth).filter(Boolean).length,
     [serviceHealth],
@@ -173,8 +168,6 @@ export default function Dashboard() {
       getSystemMonitor(),
     ]);
 
-    const failed: string[] = [];
-
     const [inboxResult, filesResult, roomsResult, unreadResult, onlineResult, systemResult] = results;
     const nextServiceHealth = {
       mail: inboxResult.status === 'fulfilled',
@@ -189,7 +182,6 @@ export default function Dashboard() {
       setEmails(inboxResult.value.emails);
       setUnreadEmailCount(inboxResult.value.unread_count);
     } else {
-      failed.push('mail');
       setEmails([]);
       setUnreadEmailCount(0);
     }
@@ -197,7 +189,6 @@ export default function Dashboard() {
     if (filesResult.status === 'fulfilled') {
       setFiles(filesResult.value);
     } else {
-      failed.push('files');
       setFiles([]);
     }
 
@@ -209,7 +200,6 @@ export default function Dashboard() {
         return nextRooms.find((room) => room.last_message_at)?.id ?? nextRooms[0]?.id ?? null;
       });
     } else {
-      failed.push('messaging');
       setRooms([]);
       setActiveRoomId(null);
     }
@@ -219,27 +209,16 @@ export default function Dashboard() {
         unreadResult.value.reduce((sum, item) => sum + item.unread_count, 0),
       );
     } else {
-      failed.push('dm unread');
       setDmUnreadTotal(0);
     }
 
-    if (onlineResult.status === 'fulfilled') {
-    } else {
-      failed.push('presence');
-    }
+    void onlineResult;
 
     if (systemResult.status === 'fulfilled') {
       setSystemMonitor(systemResult.value);
     } else {
-      failed.push('system monitor');
       setSystemMonitor(null);
     }
-
-    setLoadWarning(
-      failed.length > 0
-        ? `Some live widgets could not refresh: ${failed.join(', ')}.`
-        : null,
-    );
   }, [user?.id]);
 
   useEffect(() => {
@@ -258,15 +237,23 @@ export default function Dashboard() {
     setLoading(true);
     run().catch((error) => {
       console.error(error);
-      if (!cancelled) {
-        setLoadWarning(error instanceof Error ? error.message : 'Failed to load dashboard data.');
-      }
     });
 
     return () => {
       cancelled = true;
     };
   }, [authLoading, loadDashboardData, user?.id]);
+
+  useEffect(() => {
+    const handleMailSync = () => {
+      void loadDashboardData();
+    };
+
+    window.addEventListener(MAIL_SYNC_EVENT, handleMailSync);
+    return () => {
+      window.removeEventListener(MAIL_SYNC_EVENT, handleMailSync);
+    };
+  }, [loadDashboardData]);
 
   useLiveRefresh(
     async () => {
@@ -417,7 +404,7 @@ export default function Dashboard() {
           </button>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
-          <button className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors"><Bell className="w-5 h-5" /></button>
+          <NotificationDropdown />
           <button onClick={toggleTheme} className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
@@ -426,34 +413,6 @@ export default function Dashboard() {
       </header>
 
       <main className="p-4 sm:p-8 max-w-[1600px] mx-auto space-y-6">
-        {loadWarning && (
-          <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl text-sm font-medium text-amber-200">
-            {loadWarning}
-          </div>
-        )}
-
-        {isAdmin && (
-          <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Shield className="w-6 h-6 text-red-500" />
-              <div>
-                <h3 className="text-red-500 font-bold text-sm tracking-wide">ADMIN OPERATIONS VIEW</h3>
-                <p className="text-muted text-xs font-semibold">Live data below now comes from mail, messaging, files, and your signed-in account.</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="text-center px-4 border-r border-red-500/20">
-                <span className="block text-[10px] text-red-400 font-bold uppercase tracking-wider">Rooms</span>
-                <span className="text-xl font-bold text-primary">{rooms.length}</span>
-              </div>
-              <div className="text-center px-4">
-                <span className="block text-[10px] text-[#4f8ef7] font-bold uppercase tracking-wider">Project Spaces</span>
-                <span className="text-xl font-bold text-primary">{projectRoomCount}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="p-5 bg-card border border-border rounded-xl flex flex-col justify-between h-32 hover:border-[#4f8ef7]/50 transition-colors shadow-sm cursor-pointer group">

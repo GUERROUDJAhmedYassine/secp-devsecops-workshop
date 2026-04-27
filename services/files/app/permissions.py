@@ -115,7 +115,7 @@ def can_read_record(
 
     project_room_id = _project_room_id(bucket)
     if project_room_id:
-        return project_room_id in (member_room_ids or set())
+        return user.role == "MANAGER" and project_room_id in (member_room_ids or set())
     return False
 
 

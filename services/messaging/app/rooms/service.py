@@ -1,12 +1,47 @@
 # rooms/service.py
 import logging
 from datetime import datetime, timezone
+
+import asyncpg
 from fastapi import HTTPException, status
 from core.database import get_pool
+from core.time_utils import to_utc_iso
 from rooms.membership import is_room_member
 from messages import room_repository
 
 logger = logging.getLogger(__name__)
+
+PROJECT_ROOM_PREFIX = "project::"
+
+
+def _stored_room_name(name: str, *, is_project: bool) -> str:
+    clean_name = name.strip()
+    if not clean_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Room name is required",
+        )
+    return f"{PROJECT_ROOM_PREFIX}{clean_name}" if is_project else clean_name
+
+
+def _split_room_name(stored_name: str) -> tuple[str, bool]:
+    if stored_name.startswith(PROJECT_ROOM_PREFIX):
+        return stored_name[len(PROJECT_ROOM_PREFIX):], True
+    return stored_name, False
+
+
+def _serialize_room(row: asyncpg.Record) -> dict:
+    display_name, prefixed_project = _split_room_name(row["name"])
+    is_project = prefixed_project or bool(row["has_project_files"])
+    return {
+        "id": str(row["id"]),
+        "name": display_name,
+        "department": row["department"],
+        "created_by": str(row["created_by"]) if row["created_by"] else None,
+        "created_at": to_utc_iso(row["created_at"]),
+        "is_project": is_project,
+        "last_message_at": to_utc_iso(row["last_message_at"]) if row["last_message_at"] else None,
+    }
 
 
 async def handle_room_message(room_id: str, sender_id: str, content: str):
@@ -40,6 +75,8 @@ async def handle_room_message(room_id: str, sender_id: str, content: str):
     message_dict = {
         "type": "message",
         "from": sender_username,
+        "sender_id": sender_id,
+        "sender_username": sender_username,
         "room_id": room_id,
         "content": content,
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -58,19 +95,26 @@ async def handle_room_message(room_id: str, sender_id: str, content: str):
         logger.warning("Rate limit: user %s sent %d messages in 60s in room %s", sender_id, recent_count, room_id)
 
 
-async def create_room(name: str, department: str, created_by: str) -> dict:
+async def create_room(name: str, department: str, created_by: str, *, is_project: bool = False) -> dict:
     """Create a new room and auto-add the creator as its first member."""
     pool = get_pool()
+    stored_name = _stored_room_name(name, is_project=is_project)
     async with pool.acquire() as conn:
         async with conn.transaction():
-            row = await conn.fetchrow(
-                """
-                INSERT INTO app.rooms (name, department, created_by)
-                VALUES ($1, $2, $3::uuid)
-                RETURNING id, name, department, created_by, created_at
-                """,
-                name, department, created_by
-            )
+            try:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO app.rooms (name, department, created_by)
+                    VALUES ($1, $2, $3::uuid)
+                    RETURNING id, name, department, created_by, created_at
+                    """,
+                    stored_name, department, created_by
+                )
+            except asyncpg.UniqueViolationError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A room with this name already exists",
+                ) from exc
             await conn.execute(
                 """
                 INSERT INTO app.room_members (room_id, user_id)
@@ -78,13 +122,14 @@ async def create_room(name: str, department: str, created_by: str) -> dict:
                 """,
                 str(row["id"]), created_by
             )
-    logger.info("Room created id=%s name=%s by=%s", row["id"], name, created_by)
+    logger.info("Room created id=%s name=%s project=%s by=%s", row["id"], stored_name, is_project, created_by)
     return {
         "id": str(row["id"]),
-        "name": row["name"],
+        "name": name.strip(),
         "department": row["department"],
         "created_by": str(row["created_by"]),
-        "created_at": row["created_at"].isoformat()
+        "created_at": to_utc_iso(row["created_at"]),
+        "is_project": is_project,
     }
 
 
@@ -109,32 +154,48 @@ async def join_room(room_id: str, user_id: str) -> dict:
     return {"room_id": room_id, "user_id": user_id, "status": "joined"}
 
 
-async def list_rooms_for_user(user_id: str) -> list[dict]:
+async def list_rooms_for_user(user_id: str, *, project_only: bool | None = None) -> list[dict]:
     """Fetch rooms that the user is a member of."""
     pool = get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT r.id, r.name, r.department, r.created_by, r.created_at
+            SELECT
+                r.id,
+                r.name,
+                r.department,
+                r.created_by,
+                r.created_at,
+                lm.created_at AS last_message_at,
+                EXISTS (
+                    SELECT 1
+                    FROM app.files f
+                    WHERE f.is_deleted = false
+                      AND f.bucket = 'project/' || r.id::text
+                ) AS has_project_files
             FROM app.rooms r
             JOIN app.room_members rm ON rm.room_id = r.id
+            LEFT JOIN LATERAL (
+                SELECT m.created_at
+                FROM app.messages m
+                WHERE m.room_id = r.id
+                  AND m.is_deleted = FALSE
+                ORDER BY m.created_at DESC
+                LIMIT 1
+            ) lm ON TRUE
             WHERE rm.user_id = $1::uuid
-            ORDER BY r.created_at DESC
+            ORDER BY COALESCE(lm.created_at, r.created_at) DESC
             """
             ,
             user_id
         )
-    logger.debug("Listed %d rooms for user=%s", len(rows), user_id)
-    return [
-        {
-            "id": str(r["id"]),
-            "name": r["name"],
-            "department": r["department"],
-            "created_by": str(r["created_by"]) if r["created_by"] else None,
-            "created_at": r["created_at"].isoformat()
-        }
-        for r in rows
-    ]
+    serialized: list[dict] = []
+    for row in rows:
+        payload = _serialize_room(row)
+        if project_only is None or payload["is_project"] == project_only:
+            serialized.append(payload)
+    logger.debug("Listed %d rooms for user=%s project_only=%s", len(serialized), user_id, project_only)
+    return serialized
 
 
 async def get_room_members(room_id: str) -> list[str]:
@@ -149,10 +210,27 @@ async def get_room_members(room_id: str) -> list[str]:
     return [str(r["user_id"]) for r in rows]
 
 
-async def remove_user_from_room(room_id: str, user_id: str) -> dict:
+async def remove_user_from_room(room_id: str, user_id: str, *, actor_id: str, actor_role: str) -> dict:
     """Remove a user from a room. Returns a status payload."""
     pool = get_pool()
     async with pool.acquire() as conn:
+        room_row = await conn.fetchrow(
+            "SELECT created_by FROM app.rooms WHERE id = $1::uuid",
+            room_id,
+        )
+        if not room_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Room not found",
+            )
+
+        creator_id = str(room_row["created_by"])
+        if user_id == creator_id and actor_role != "IT_ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only IT_ADMIN can remove the room creator",
+            )
+
         async with conn.transaction():
             result = await conn.execute(
                 """

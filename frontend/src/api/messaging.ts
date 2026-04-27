@@ -22,6 +22,11 @@ export async function getRooms(): Promise<Room[]> {
   return apiGet<Room[]>(`${MSG_BASE}/rooms`);
 }
 
+/** List only project-backed rooms for File Manager workspaces. */
+export async function getProjectRooms(): Promise<Room[]> {
+  return apiGet<Room[]>(`${MSG_BASE}/rooms/projects`);
+}
+
 /** Get a single room by ID. */
 export async function getRoom(roomId: string): Promise<Room> {
   return apiGet<Room>(`${MSG_BASE}/rooms/${roomId}`);
@@ -30,6 +35,11 @@ export async function getRoom(roomId: string): Promise<Room> {
 /** Create a new room or DM channel. */
 export async function createRoom(payload: CreateRoomPayload): Promise<Room> {
   return apiPost<Room>(`${MSG_BASE}/rooms`, payload);
+}
+
+/** Create a project workspace that automatically gets a matching chat room. */
+export async function createProjectRoom(payload: CreateRoomPayload): Promise<Room> {
+  return apiPost<Room>(`${MSG_BASE}/rooms/projects`, payload);
 }
 
 /** Add a user to a room (admin/manager action). */

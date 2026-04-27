@@ -9,5 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
-ENV PYTHONPATH=/app/app
+# Include both project root and app package root:
+# - /app for `uvicorn app.main:app`
+# - /app/app for legacy absolute imports like `from routers import ...`
+ENV PYTHONPATH=/app:/app/app
 CMD python app/create_superuser.py && uvicorn app.main:app --host 0.0.0.0 --port 8001

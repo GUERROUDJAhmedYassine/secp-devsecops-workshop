@@ -1,11 +1,12 @@
 import logging
 from uuid import UUID
-from datetime import datetime, timezone
+
 from core.database import get_pool
+from core.time_utils import to_utc_iso
 
 logger = logging.getLogger(__name__)
 
-# Maximum messages to return in one request — hard cap
+# Maximum messages to return in one request - hard cap
 MAX_HISTORY_LIMIT = 100
 
 
@@ -29,7 +30,7 @@ async def save_dm(
             if not row:
                 raise RuntimeError(f"Failed to save DM from {sender_id} to {recipient_id}")
 
-            logger.info(f"DM saved — id={row['id']} from={sender_id} to={recipient_id}")
+            logger.info(f"DM saved - id={row['id']} from={sender_id} to={recipient_id}")
             return row["id"]
 
 
@@ -68,7 +69,7 @@ async def get_dm_history(
             user1_id, user2_id, limit, offset
         )
 
-        logger.debug(f"History fetched — between={user1_id}&{user2_id} count={len(rows)}")
+        logger.debug(f"History fetched - between={user1_id}&{user2_id} count={len(rows)}")
         return [_format_message(row) for row in rows]
 
 
@@ -96,7 +97,7 @@ async def get_unread_count(
 
 
 async def get_all_unread_counts(user_id: str) -> list[dict]:
-    """Get unread message counts from ALL senders for a user in one query."""
+    """Get unread message counts from all senders for a user in one query."""
     pool = get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -118,7 +119,7 @@ async def get_all_unread_counts(user_id: str) -> list[dict]:
             {
                 "sender_id": str(row["sender_id"]),
                 "unread_count": int(row["unread_count"]),
-                "latest_at": row["latest_at"].isoformat()
+                "latest_at": to_utc_iso(row["latest_at"])
             }
             for row in rows
         ]
@@ -145,32 +146,45 @@ async def mark_as_read(
             )
             count = int(result.split()[-1])
             if count > 0:
-                logger.info(f"Marked {count} messages as read — user={user_id} from={sender_id}")
+                logger.info(f"Marked {count} messages as read - user={user_id} from={sender_id}")
             return count
 
 
 async def mark_single_as_read(
     message_id: str,
     reader_id: str
-) -> bool:
-    """Mark a specific message as read. Only recipient can mark it."""
+) -> tuple[bool, str | None]:
+    """Mark a specific message as read for a DM recipient or a room member."""
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # Verify recipient ownership before updating
             row = await conn.fetchrow(
                 """
-                SELECT recipient_id FROM app.messages
+                SELECT sender_id, recipient_id, room_id
+                FROM app.messages
                 WHERE id = $1::uuid AND is_deleted = FALSE
                 """,
                 message_id
             )
 
             if not row:
-                return False
+                return False, None
 
-            if str(row["recipient_id"]) != reader_id:
-                logger.warning(f"Read rejected — {reader_id} is not the recipient of {message_id}")
+            if row["room_id"] is not None:
+                is_member = await conn.fetchval(
+                    """
+                    SELECT 1
+                    FROM app.room_members
+                    WHERE room_id = $1::uuid AND user_id = $2::uuid
+                    """,
+                    row["room_id"],
+                    reader_id,
+                )
+                if not is_member:
+                    logger.warning(f"Read rejected - {reader_id} is not in room {row['room_id']}")
+                    raise PermissionError("You can only mark room messages read if you are a member")
+            elif str(row["recipient_id"]) != reader_id:
+                logger.warning(f"Read rejected - {reader_id} is not the recipient of {message_id}")
                 raise PermissionError("You can only mark messages sent to you as read")
 
             result = await conn.execute(
@@ -184,18 +198,17 @@ async def mark_single_as_read(
             updated = "1" in result
             if updated:
                 logger.info(f"Message {message_id} marked as read by {reader_id}")
-            return updated
+            return updated, str(row["sender_id"])
 
 
 async def soft_delete_message(
     message_id: str,
     user_id: str
 ) -> bool:
-    """Soft delete a message — only sender can delete. Audit trail preserved."""
+    """Soft delete a message - only sender can delete. Audit trail preserved."""
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # First verify ownership before deleting
             owner = await conn.fetchrow(
                 """
                 SELECT sender_id FROM app.messages
@@ -205,11 +218,11 @@ async def soft_delete_message(
             )
 
             if not owner:
-                logger.warning(f"Delete failed — message {message_id} not found")
+                logger.warning(f"Delete failed - message {message_id} not found")
                 return False
 
             if str(owner["sender_id"]) != user_id:
-                logger.warning(f"Delete rejected — {user_id} does not own message {message_id}")
+                logger.warning(f"Delete rejected - {user_id} does not own message {message_id}")
                 raise PermissionError("You can only delete your own messages")
 
             await conn.execute(
@@ -253,7 +266,7 @@ async def get_conversation_list(user_id: str) -> list[dict]:
             {
                 "other_user": str(row["other_user"]),
                 "last_message": row["content"] if not row["is_deleted"] else "[deleted]",
-                "last_message_at": row["created_at"].isoformat(),
+                "last_message_at": to_utc_iso(row["created_at"]),
                 "is_read": row["is_read"],
                 "sent_by_me": str(row["sender_id"]) == user_id
             }
@@ -270,5 +283,5 @@ def _format_message(row) -> dict:
         "content": row["content"] if not row["is_deleted"] else "[deleted]",
         "is_read": row["is_read"],
         "is_deleted": row["is_deleted"],
-        "created_at": row["created_at"].isoformat()
+        "created_at": to_utc_iso(row["created_at"])
     }

@@ -138,6 +138,7 @@ class DirectoryUserResponse(BaseModel):
     email: EmailStr
     role: str
     department: Optional[str] = None
+    is_active: bool
 
     class Config:
         from_attributes = True
@@ -150,4 +151,5 @@ class DirectoryUserResponse(BaseModel):
             email=user.email,
             role=user.role.value if hasattr(user.role, "value") else str(user.role),
             department=user.department,
+            is_active=user.is_active,
         )

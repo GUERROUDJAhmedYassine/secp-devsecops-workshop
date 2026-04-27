@@ -109,7 +109,7 @@ async def handle_read(websocket: WebSocket, user_id: str, data: dict) -> None:
 
     # --- Persist ---
     try:
-        updated = await mark_single_as_read(message_id=message_id, reader_id=user_id)
+        updated, actual_sender_id = await mark_single_as_read(message_id=message_id, reader_id=user_id)
         if not updated:
             # Message might already be read or doesn't exist – still acknowledge to avoid client retry
             await websocket.send_json({
@@ -127,15 +127,17 @@ async def handle_read(websocket: WebSocket, user_id: str, data: dict) -> None:
         return
 
     read_at = datetime.now(timezone.utc).isoformat()
+    resolved_sender_id = actual_sender_id or sender_id
 
     # --- Notify sender in real-time ---
     from websocket.manager import send_to_user
-    await send_to_user(sender_id, {
-        "type": "message_read",
-        "message_id": message_id,
-        "by": user_id,
-        "timestamp": read_at,
-    })
+    if resolved_sender_id:
+        await send_to_user(resolved_sender_id, {
+            "type": "message_read",
+            "message_id": message_id,
+            "by": user_id,
+            "timestamp": read_at,
+        })
 
     # --- Ack to reader (useful for multi-device sync) ---
     await websocket.send_json({
@@ -152,10 +154,10 @@ async def handle_read(websocket: WebSocket, user_id: str, data: dict) -> None:
         service="messaging",
         user_id=user_id,
         source_ip=None,
-        payload={"message_id": message_id, "sender_id": sender_id},
+        payload={"message_id": message_id, "sender_id": resolved_sender_id},
     )
 
-    logger.info(f"Message {message_id} marked read by {user_id} (sender: {sender_id})")
+    logger.info(f"Message {message_id} marked read by {user_id} (sender: {resolved_sender_id})")
 
 
 async def handle_dm(websocket: WebSocket, user_id: str, data: dict) -> None:

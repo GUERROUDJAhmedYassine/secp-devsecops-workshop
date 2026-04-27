@@ -1,12 +1,13 @@
 
 import {
-  Bell, Moon, Sun, MoreVertical,
+  Moon, Sun, MoreVertical,
   Eye, EyeOff, ShieldCheck, RefreshCw, AlertTriangle, UserCheck, Menu, Loader2
 } from 'lucide-react';
 import { useThemeContext } from '../context/ThemeContext';
 import { useSidebar } from '../context/SidebarContext';
 import { useAuth } from '../hooks/useAuth';
 import { useState } from 'react';
+import NotificationDropdown from '../components/NotificationDropdown';
 
 /** Map role to a human-readable clearance label. */
 function clearanceFromRole(role: string): string {
@@ -91,7 +92,7 @@ export default function UserProfile() {
           <h1 className="text-base sm:text-lg font-bold text-primary hidden sm:block">Security Operations</h1>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
-          <button className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
+          <NotificationDropdown />
           <button onClick={toggleTheme} className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>

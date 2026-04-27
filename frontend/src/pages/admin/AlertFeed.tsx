@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Bell, MoreVertical, Moon, Sun, MinusSquare, PlusSquare, Menu } from 'lucide-react';
+import { Search, MoreVertical, Moon, Sun, MinusSquare, PlusSquare, Menu } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSiem } from '../../hooks/useSiem';
 import { getEvents } from '../../api/siem';
 import type { SiemEvent, Alert } from '../../types/siem.types';
+import NotificationDropdown from '../../components/NotificationDropdown';
 
 export default function AlertFeed() {
   const [activeTab, setActiveTab] = useState('All');
@@ -63,9 +64,7 @@ export default function AlertFeed() {
               className="w-full pl-9 pr-4 py-1.5 bg-page border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
-          <button className="text-muted hover:text-primary transition-colors p-1">
-            <Bell size={18} />
-          </button>
+          <NotificationDropdown />
           <button onClick={toggleTheme} className="text-muted hover:text-primary transition-colors p-1">
             {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
@@ -154,15 +153,15 @@ function AlertCard({ alert, updateAlertStatus }: { alert: Alert; updateAlertStat
                 Suspend
               </button>
             )}
-            <button 
-              onClick={() => {
-                if (alert.status !== 'RESOLVED' && alert.status !== 'DISMISSED') {
+            {alert.status !== 'RESOLVED' && alert.status !== 'DISMISSED' && (
+              <button 
+                onClick={() => {
                   updateAlertStatus(alert.id, { status: 'RESOLVED' });
-                }
-              }}
-              className="px-4 py-1.5 border border-border hover:bg-page text-primary text-xs font-medium rounded transition-colors">
-              {(alert.status === 'RESOLVED' || alert.status === 'DISMISSED') ? 'Details' : 'Close'}
-            </button>
+                }}
+                className="px-4 py-1.5 border border-border hover:bg-page text-primary text-xs font-medium rounded transition-colors">
+                Close
+              </button>
+            )}
           </div>
         </div>
       </div>

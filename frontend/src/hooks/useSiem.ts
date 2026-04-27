@@ -19,6 +19,36 @@ import type {
 } from '../types/siem.types';
 import { useAuth } from './useAuth';
 
+const ALERT_SYNC_EVENT = 'secp:siem-alert-sync';
+
+interface AlertSyncDetail {
+  alert: Alert;
+}
+
+function sortAlertsByCreatedAt(items: Alert[]): Alert[] {
+  return [...items].sort((a, b) => {
+    const left = Date.parse(a.created_at);
+    const right = Date.parse(b.created_at);
+    const safeLeft = Number.isNaN(left) ? 0 : left;
+    const safeRight = Number.isNaN(right) ? 0 : right;
+    return safeRight - safeLeft;
+  });
+}
+
+function upsertAlert(items: Alert[], nextAlert: Alert): Alert[] {
+  const remaining = items.filter((alert) => alert.id !== nextAlert.id);
+  return sortAlertsByCreatedAt([nextAlert, ...remaining]);
+}
+
+function broadcastAlertSync(alert: Alert) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent<AlertSyncDetail>(ALERT_SYNC_EVENT, {
+      detail: { alert },
+    }),
+  );
+}
+
 export function useSiem() {
   const { isAuthenticated, isAdmin } = useAuth();
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -57,13 +87,15 @@ export function useSiem() {
 
         switch (payload.type) {
           case 'new_alert':
-            setAlerts((prev) => [payload.data, ...prev]);
+            setAlerts((prev) => upsertAlert(prev, payload.data));
+            broadcastAlertSync(payload.data);
             break;
 
           case 'alert_updated':
             setAlerts((prev) =>
-              prev.map((a) => (a.id === payload.data.id ? payload.data : a)),
+              upsertAlert(prev, payload.data),
             );
+            broadcastAlertSync(payload.data);
             break;
             
           case 'new_baseline':
@@ -93,13 +125,27 @@ export function useSiem() {
     };
   }, [isAuthenticated, isAdmin]);
 
+  useEffect(() => {
+    if (!isAuthenticated || !isAdmin) return;
+
+    const handleAlertSync = (event: Event) => {
+      const detail = (event as CustomEvent<AlertSyncDetail>).detail;
+      if (!detail?.alert) return;
+      setAlerts((prev) => upsertAlert(prev, detail.alert));
+    };
+
+    window.addEventListener(ALERT_SYNC_EVENT, handleAlertSync as EventListener);
+    return () => {
+      window.removeEventListener(ALERT_SYNC_EVENT, handleAlertSync as EventListener);
+    };
+  }, [isAuthenticated, isAdmin]);
+
   /* ---- alert status mutation ---- */
   const updateAlertStatus = useCallback(
     async (alertId: string, update: AlertStatusUpdate) => {
       const updated = await apiUpdateAlertStatus(alertId, update);
-      setAlerts((prev) =>
-        prev.map((a) => (a.id === updated.id ? updated : a)),
-      );
+      setAlerts((prev) => upsertAlert(prev, updated));
+      broadcastAlertSync(updated);
       return updated;
     },
     [],

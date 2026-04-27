@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Bell, MoreVertical, Moon, Sun, Plus, TrendingUp, AlertTriangle, X, Info, Loader2, Menu, RefreshCw, Unlock, Trash2, Download } from 'lucide-react';
+import { Search, MoreVertical, Moon, Sun, Plus, TrendingUp, AlertTriangle, X, Info, Loader2, Menu, RefreshCw, Unlock, Trash2, Download } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { Link } from 'react-router-dom';
 import { registerUser, listUsers, deleteUser, unlockUser } from '../../api/admin';
@@ -7,6 +7,7 @@ import { apiGetBlob } from '../../lib/apiClient';
 import { FILES_BASE } from '../../lib/constants';
 import type { User, UserRole } from '../../types/user.types';
 import { useSidebar } from '../../context/SidebarContext';
+import NotificationDropdown from '../../components/NotificationDropdown';
 /** Derive initials from username (e.g. "ahmed.benali" → "AB") */
 function getInitials(username: string): string {
   const parts = username.split(/[.\-_\s]+/);
@@ -200,9 +201,7 @@ export default function UserManagement() {
           <button onClick={fetchUsers} className="text-muted hover:text-primary transition-colors p-1" title="Refresh users">
             <RefreshCw size={16} className={isLoadingUsers ? 'animate-spin' : ''} />
           </button>
-          <button className="text-muted hover:text-primary transition-colors p-1">
-            <Bell size={16} />
-          </button>
+          <NotificationDropdown />
           <button onClick={toggleTheme} className="text-muted hover:text-primary transition-colors p-1">
             {theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
           </button>

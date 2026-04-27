@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import AdminAlertPopup from './components/AdminAlertPopup';
 import ProtectedRoute from './components/ProtectedRoute';
 import Dashboard from './pages/Dashboard.tsx';
 import FileManager from './pages/FileManager.tsx';
@@ -23,6 +24,7 @@ function AuthenticatedLayout() {
   return (
     <div className="flex h-screen bg-page text-primary font-mono overflow-hidden transition-colors duration-200 selection:bg-[#4f8ef7]/30 relative">
       <Sidebar />
+      <AdminAlertPopup />
       <Routes>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/webmail" element={<Webmail />} />

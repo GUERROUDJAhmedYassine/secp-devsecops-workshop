@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Moon, Sun, Bell, MoreVertical, Menu } from 'lucide-react';
+import { Search, Filter, Moon, Sun, MoreVertical, Menu } from 'lucide-react';
 import { useThemeContext } from '../../context/ThemeContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { getEvents } from '../../api/siem';
 import { useSiem } from '../../hooks/useSiem';
 import type { SiemEvent } from '../../types/siem.types';
+import NotificationDropdown from '../../components/NotificationDropdown';
 
 export default function EventLog() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -74,9 +75,7 @@ export default function EventLog() {
               className="w-full pl-9 pr-4 py-1.5 bg-page border border-border rounded-md text-sm placeholder:text-muted focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
-          <button className="text-muted hover:text-primary transition-colors p-1">
-            <Bell size={18} />
-          </button>
+          <NotificationDropdown />
           <button onClick={toggleTheme} className="text-muted hover:text-primary transition-colors p-1">
             {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
           </button>

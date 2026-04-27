@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Integer, Text, Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, INET
 from database import Base
 import enum
 
@@ -26,6 +26,7 @@ class User(Base):
     failed_logins  = Column(Integer,  default=0)
     locked_until   = Column(DateTime, nullable=True)
     vpn_public_key = Column(Text,     nullable=True)
+    vpn_internal_ip = Column(INET,     nullable=True, unique=True)
     last_login_at  = Column(DateTime, nullable=True)
     created_at     = Column(DateTime, default=datetime.utcnow)
 

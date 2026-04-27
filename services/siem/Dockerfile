@@ -9,4 +9,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8005"]
+ENV PYTHONPATH=/app/app
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8005 & python app/ws_server.py & wait"]

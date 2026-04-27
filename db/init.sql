@@ -15,6 +15,7 @@ CREATE TABLE app.users (
     failed_logins   INTEGER          DEFAULT 0,
     locked_until    TIMESTAMP        NULL,
     vpn_public_key  TEXT             NULL,
+    vpn_internal_ip INET             NULL UNIQUE,
     last_login_at   TIMESTAMP        NULL,
     created_at      TIMESTAMP        DEFAULT NOW()
 );
@@ -35,16 +36,14 @@ CREATE TABLE app.rooms (
     created_by  UUID         NOT NULL REFERENCES app.users(id),
     created_at  TIMESTAMP    DEFAULT NOW()
 );
-<<<<<<< HEAD
 
-=======
 CREATE TABLE app.room_members (
     room_id    UUID      NOT NULL REFERENCES app.rooms(id) ON DELETE CASCADE,
     user_id    UUID      NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     joined_at  TIMESTAMP DEFAULT NOW(),
     PRIMARY KEY (room_id, user_id)
 );
->>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a
+
 CREATE TABLE app.emails (
     id              UUID PRIMARY KEY DEFAULT uuidv7(),
     sender_id       UUID         NOT NULL REFERENCES app.users(id),
@@ -65,20 +64,14 @@ CREATE TABLE app.messages (
     room_id         UUID    NULL     REFERENCES app.rooms(id),
     content         TEXT    NOT NULL,
     is_deleted      BOOLEAN DEFAULT FALSE,
-<<<<<<< HEAD
-=======
-    is_read BOOLEAN DEFAULT FALSE,
->>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a
+    is_read         BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW(),
     CONSTRAINT chk_message_target CHECK (
         (recipient_id IS NOT NULL AND room_id IS NULL) OR
         (recipient_id IS NULL AND room_id IS NOT NULL)
     )
 );
-<<<<<<< HEAD
 
-=======
->>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a
 CREATE TABLE app.files (
     id              UUID PRIMARY KEY DEFAULT uuidv7(),
     owner_id        UUID         NOT NULL REFERENCES app.users(id),
@@ -90,6 +83,10 @@ CREATE TABLE app.files (
     is_deleted      BOOLEAN      DEFAULT FALSE,
     uploaded_at     TIMESTAMP    DEFAULT NOW()
 );
+
+-- ============================================================
+-- SIEM SCHEMA — Append-only event log, alerts, baselines
+-- ============================================================
 
 CREATE TABLE siem.events (
     id          BIGSERIAL    PRIMARY KEY,
@@ -126,6 +123,9 @@ CREATE TABLE siem.user_baselines (
     last_updated     TIMESTAMP DEFAULT NOW()
 );
 
+-- ============================================================
+-- APPEND-ONLY TRIGGER — siem.events cannot be modified or deleted
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION siem.prevent_modification()
 RETURNS TRIGGER AS $$
@@ -139,7 +139,7 @@ CREATE TRIGGER enforce_append_only
     FOR EACH ROW EXECUTE FUNCTION siem.prevent_modification();
 
 -- ============================================================
--- 5. INDEXES — for detection engine query performance
+-- INDEXES — for detection engine query performance
 -- ============================================================
 
 -- Detection engine queries events by user + type + time window
@@ -173,7 +173,7 @@ CREATE INDEX idx_files_owner
     ON app.files (owner_id, bucket);
 
 -- ============================================================
--- 6. SCHEMA PERMISSIONS
+-- SCHEMA PERMISSIONS
 -- Only siem service user can write to siem schema
 -- App services cannot write directly to siem schema
 -- ============================================================
@@ -197,8 +197,4 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA siem TO siem_service;
 
 -- Siem service also needs to read app.users (for FK resolution)
 GRANT USAGE ON SCHEMA app TO siem_service;
-<<<<<<< HEAD
 GRANT SELECT ON app.users TO siem_service;
-=======
-GRANT SELECT ON app.users TO siem_service;
->>>>>>> 4067ab56ec700acd5c73759863276850cebccc2a

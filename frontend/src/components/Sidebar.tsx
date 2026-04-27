@@ -1,4 +1,6 @@
+
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useSiem } from '../hooks/useSiem';
 import { useDashboard } from '../hooks/useDashboard';
 import { useAuth } from '../hooks/useAuth';
 import { useSidebar } from '../context/SidebarContext';
@@ -33,9 +35,13 @@ export default function Sidebar() {
     { name: 'User Profile', path: '/profile', icon: User },
   ];
 
+  const { alerts } = useSiem();
+  
+  const openAlertsCount = alerts.filter(a => a.status === 'OPEN').length;
+
   const adminNavItems = [
     { name: 'Live Monitor', path: '/admin/monitor', icon: Activity, badge: null },
-    { name: 'Alerts', path: '/admin/alerts', icon: Bell, badge: 4 },
+    { name: 'Alerts', path: '/admin/alerts', icon: Bell, badge: openAlertsCount > 0 ? openAlertsCount : null },
     { name: 'Event Log', path: '/admin/events', icon: FileText, badge: null },
     { name: 'Users', path: '/admin/users', icon: Users, badge: null },
     { name: 'Baselines', path: '/admin/baselines', icon: Sliders, badge: null },

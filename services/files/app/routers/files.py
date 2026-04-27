@@ -11,10 +11,17 @@ from app.collaboration import collaboration_manager
 from app.config import now_utc, sanitize_filename, uploads_root
 from app.dependencies import get_db
 from app.events import emit_event
-from app.models import CollaborationSessionResponse, CollaborationStateResponse, CurrentUser, FileRecord, ListResponse, UploadResponse
-from app.permissions import bucket_to_dir, can_delete_record, can_read_record, ensure_bucket_allowed_for_upload, get_file_row
+from app.models import CollaborationSessionResponse, CollaborationStateResponse, CurrentUser, FilePreviewResponse, FileRecord, ListResponse, UploadResponse
+from app.permissions import bucket_to_dir, can_delete_record, can_read_record, ensure_bucket_allowed_for_upload, get_file_row, list_member_room_ids
+from app.preview import load_docx_preview, load_text_preview, preview_kind_for_file
 
 router = APIRouter(tags=["files"])
+
+
+async def _member_room_ids_for_user(pool: asyncpg.Pool, user: CurrentUser) -> set[str]:
+    if user.role == "IT_ADMIN":
+        return set()
+    return await list_member_room_ids(pool, user.id)
 
 
 @router.post("/files/upload", response_model=UploadResponse)
@@ -25,7 +32,7 @@ async def upload_file(
     user: CurrentUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_db),
 ) -> UploadResponse:
-    ensure_bucket_allowed_for_upload(bucket, user)
+    await ensure_bucket_allowed_for_upload(bucket, user, pool)
 
     file_id = uuid.uuid4()
     safe_name = sanitize_filename(file.filename or "file")
@@ -79,6 +86,7 @@ async def list_files(
     user: CurrentUser = Depends(get_current_user),
     pool: asyncpg.Pool = Depends(get_db),
 ) -> ListResponse:
+    member_room_ids = await _member_room_ids_for_user(pool, user)
     rows = await pool.fetch(
         """
         SELECT id, owner_id, filename, file_size, mime_type, storage_path, bucket, is_deleted, uploaded_at
@@ -92,7 +100,7 @@ async def list_files(
     for row in rows:
         if bucket and row["bucket"] != bucket:
             continue
-        if can_read_record(row, user):
+        if can_read_record(row, user, member_room_ids=member_room_ids):
             items.append(FileRecord(**dict(row)))
 
     await emit_event(
@@ -114,7 +122,8 @@ async def download_file(
     pool: asyncpg.Pool = Depends(get_db),
 ) -> FileResponse:
     rec = await get_file_row(pool, file_id)
-    if not can_read_record(rec, user):
+    member_room_ids = await _member_room_ids_for_user(pool, user)
+    if not can_read_record(rec, user, member_room_ids=member_room_ids):
         await emit_event(
             pool,
             event_type="UNAUTHORIZED_ACCESS",
@@ -161,6 +170,41 @@ async def download_file(
     return FileResponse(path=str(path), filename=rec["filename"], media_type=rec["mime_type"] or "application/octet-stream")
 
 
+@router.get("/files/{file_id}/preview", response_model=FilePreviewResponse)
+async def preview_file(
+    file_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_db),
+) -> FilePreviewResponse:
+    rec = await get_file_row(pool, file_id)
+    member_room_ids = await _member_room_ids_for_user(pool, user)
+    if not can_read_record(rec, user, member_room_ids=member_room_ids):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    path = Path(rec["storage_path"])
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing on disk")
+
+    preview_kind = preview_kind_for_file(rec["filename"], rec["mime_type"])
+    if preview_kind is None:
+        raise HTTPException(status_code=400, detail="Preview is not available for this file type")
+
+    try:
+        if path.suffix.lower() == ".docx":
+            content = load_docx_preview(path)
+        else:
+            content = load_text_preview(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return FilePreviewResponse(
+        kind=preview_kind,
+        filename=rec["filename"],
+        mime_type=rec["mime_type"],
+        content=content,
+    )
+
+
 @router.delete("/files/{file_id}")
 async def delete_file(
     request: Request,
@@ -169,7 +213,8 @@ async def delete_file(
     pool: asyncpg.Pool = Depends(get_db),
 ) -> dict:
     rec = await get_file_row(pool, file_id)
-    if not can_delete_record(rec, user):
+    member_room_ids = await _member_room_ids_for_user(pool, user)
+    if not can_delete_record(rec, user, member_room_ids=member_room_ids):
         await emit_event(
             pool,
             event_type="UNAUTHORIZED_ACCESS",
@@ -200,15 +245,20 @@ async def collaborate_on_file(
     pool: asyncpg.Pool = Depends(get_db),
 ) -> CollaborationSessionResponse:
     rec = await get_file_row(pool, file_id)
-    if not can_read_record(rec, user):
+    member_room_ids = await _member_room_ids_for_user(pool, user)
+    if not can_read_record(rec, user, member_room_ids=member_room_ids):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    session = await collaboration_manager.open_session(
-        file_id=file_id,
-        user_id=user.id,
-        filename=rec["filename"],
-        mime_type=rec["mime_type"],
-    )
+    try:
+        session = await collaboration_manager.open_session(
+            file_id=file_id,
+            user_id=user.id,
+            filename=rec["filename"],
+            mime_type=rec["mime_type"],
+            storage_path=str(Path(rec["storage_path"])),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     participants = sorted(session.participants)
     status = "collaborative" if len(participants) > 1 else "solo"
 
@@ -227,9 +277,9 @@ async def collaborate_on_file(
     )
 
     message = (
-        f"Opened {session.mode} emulator for live collaboration."
+        f"Opened {session.mode} editor for live collaboration."
         if status == "collaborative"
-        else f"Opened {session.mode} emulator. Waiting for another participant."
+        else f"Opened {session.mode} editor. Waiting for another participant."
     )
     return CollaborationSessionResponse(
         session_id=session.session_id,
@@ -252,9 +302,13 @@ async def get_collaboration_state(
     pool: asyncpg.Pool = Depends(get_db),
 ) -> CollaborationStateResponse:
     rec = await get_file_row(pool, file_id)
-    if not can_read_record(rec, user):
+    member_room_ids = await _member_room_ids_for_user(pool, user)
+    if not can_read_record(rec, user, member_room_ids=member_room_ids):
         raise HTTPException(status_code=403, detail="Access denied")
-    snapshot = await collaboration_manager.snapshot(file_id=file_id, session_id=session_id)
+    try:
+        snapshot = await collaboration_manager.snapshot(file_id=file_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Collaboration session not found") from exc
     return CollaborationStateResponse(**snapshot)
 
 
@@ -282,7 +336,8 @@ async def collaboration_websocket(
 
     try:
         rec = await get_file_row(pool, file_id)
-        if not can_read_record(rec, user):
+        member_room_ids = await _member_room_ids_for_user(pool, user)
+        if not can_read_record(rec, user, member_room_ids=member_room_ids):
             await websocket.send_json({"type": "error", "detail": "Access denied"})
             await websocket.close(code=4403)
             return
@@ -315,24 +370,32 @@ async def collaboration_websocket(
                 await websocket.send_json({"type": "error", "detail": "operation object is required"})
                 continue
 
-            event = await collaboration_manager.apply_operation(
-                file_id=file_id,
-                session_id=session_id,
-                user_id=user.id,
-                operation=operation,
-            )
-            await collaboration_manager.broadcast(
-                file_id=file_id,
-                session_id=session_id,
-                message=event,
-            )
+            try:
+                event = await collaboration_manager.apply_operation(
+                    file_id=file_id,
+                    session_id=session_id,
+                    user_id=user.id,
+                    operation=operation,
+                )
+            except ValueError as exc:
+                await websocket.send_json({"type": "error", "detail": str(exc)})
+                continue
+
+            if event is not None:
+                await collaboration_manager.broadcast(
+                    file_id=file_id,
+                    session_id=session_id,
+                    message=event,
+                )
     except WebSocketDisconnect:
         pass
-    except ValueError as exc:
-        await websocket.send_json({"type": "error", "detail": str(exc)})
-        await websocket.close(code=4400)
     finally:
-        await collaboration_manager.detach_socket(file_id=file_id, session_id=session_id, user_id=user.id)
+        await collaboration_manager.detach_socket(
+            file_id=file_id,
+            session_id=session_id,
+            user_id=user.id,
+            websocket=websocket,
+        )
         try:
             snapshot = await collaboration_manager.snapshot(file_id=file_id, session_id=session_id)
             await collaboration_manager.broadcast(

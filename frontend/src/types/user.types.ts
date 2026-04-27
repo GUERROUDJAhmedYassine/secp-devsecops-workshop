@@ -19,6 +19,15 @@ export interface User {
   risk_score: number;
 }
 
+export interface DirectoryUser {
+  id: string;
+  username: string;
+  email: string;
+  role: UserRole | string;
+  department: string | null;
+  is_active: boolean;
+}
+
 export interface AuthTokens {
   access_token: string;
   refresh_token?: string;

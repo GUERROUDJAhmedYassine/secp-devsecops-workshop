@@ -14,6 +14,7 @@ import type {
   PasswordChangePayload,
 } from '../types/user.types';
 
+import type { DirectoryUser } from '../types/user.types';
 // NOTE: messaging directory is intentionally minimal (no PII)
 
 /**
@@ -79,8 +80,6 @@ export async function changePassword(payload: PasswordChangePayload): Promise<vo
 }
 
 /** Public user directory for DM user picker (any authenticated user). */
-export type DirectoryUser = { id: string; username: string; is_active: boolean };
-
 export async function listDirectoryUsers(): Promise<DirectoryUser[]> {
   return apiGet<DirectoryUser[]>(`${AUTH_BASE}/auth/users`);
 }

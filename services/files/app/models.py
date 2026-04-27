@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 Role = Literal["EMPLOYEE", "MANAGER", "IT_ADMIN"]
@@ -57,4 +57,12 @@ class CollaborationStateResponse(BaseModel):
     revision: int
     text_content: str
     sheet_cells: dict[str, str]
+    yjs_updates: list[str] = Field(default_factory=list)
     participants: list[str]
+
+
+class FilePreviewResponse(BaseModel):
+    kind: Literal["text", "html"]
+    filename: str
+    mime_type: Optional[str] = None
+    content: str

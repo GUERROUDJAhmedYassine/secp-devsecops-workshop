@@ -7,6 +7,8 @@ export interface Room {
   name: string;
   /** Department scope for the room (nullable in DB). */
   department?: string | null;
+  /** True when this room also represents a project workspace. */
+  is_project?: boolean;
   /** Creator user id (uuid string). */
   created_by?: string | null;
   created_at: string;
@@ -27,6 +29,7 @@ export interface RoomMessage {
   sender_username?: string;
   timestamp?: string;
   edited?: boolean;
+  is_read?: boolean;
 }
 
 export interface DirectMessage {
@@ -69,7 +72,7 @@ export type MessagingWsInbound =
   | { type: 'read_ack'; message_id: string; status: 'success' | 'already_read'; timestamp?: string }
   | { type: 'room_sent'; room_id: string; timestamp: string }
   // room broadcast payload is sent via rooms.service.handle_room_message()
-  | { type: 'message'; from: string; room_id: string; content: string; timestamp: string; message_id: string }
+  | { type: 'message'; from: string; sender_id?: string; sender_username?: string; room_id: string; content: string; timestamp: string; message_id: string }
   | { type: 'history'; with: string; messages: DirectMessage[]; limit: number; offset: number; count: number };
 
 /** Outbound WebSocket payloads */

@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Search, Bell, Moon, Sun, MoreVertical, Plus,
-  Lock, Shield, Info, AlertTriangle, Smile, Send,
+  Lock, Shield, Info, AlertTriangle, Send,
   Menu, ArrowLeft
 } from 'lucide-react';
 import { useThemeContext } from '../context/ThemeContext';
 import { useSidebar } from '../context/SidebarContext';
 import { useAuth } from '../hooks/useAuth';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { DEPARTMENT_OPTIONS, getPreferredDepartment } from '../lib/departments';
 import {
   addUserToRoom,
   createMessagingSocket,
@@ -21,12 +24,10 @@ import {
   markDmRead,
   removeUserFromRoom,
 } from '../api/messaging';
-import { listUsers } from '../api/admin';
 import type { Room, RoomMessage, DirectMessage, DmConversation, UnreadCount, MessagingWsInbound, MessagingWsOutbound } from '../types/messaging.types';
-import type { User } from '../types/user.types';
-import { listDirectoryUsers, type DirectoryUser } from '../api/auth';
+import { listDirectoryUsers } from '../api/auth';
 import type { WsManager } from '../lib/websocket';
-
+import type { DirectoryUser } from '../types/user.types';
 function ModalShell({
   title,
   open,
@@ -62,10 +63,21 @@ function ModalShell({
   );
 }
 
+function formatDirectoryMeta(user: DirectoryUser | undefined): string {
+  if (!user) {
+    return 'Directory account';
+  }
+  const parts = [user.email, user.department, user.role]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(' • ') : 'Directory account';
+}
+
 export default function Messaging() {
+  const location = useLocation();
   const { theme, toggleTheme } = useThemeContext();
   const { toggleSidebar } = useSidebar();
-  const { user, isAdmin, isManagerOrAbove } = useAuth();
+  const { user, isManagerOrAbove } = useAuth();
   const [activeKind, setActiveKind] = useState<'room' | 'dm'>('room');
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedDmUserId, setSelectedDmUserId] = useState<string | null>(null);
@@ -84,19 +96,20 @@ export default function Messaging() {
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [threadSearch, setThreadSearch] = useState('');
 
   const [newDmOpen, setNewDmOpen] = useState(false);
   const [newDmSearch, setNewDmSearch] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
-  const [createDept, setCreateDept] = useState(user?.department ?? 'SOC');
+  const [createDept, setCreateDept] = useState(getPreferredDepartment(user?.department));
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSaving, setCreateSaving] = useState(false);
 
   const [addUsersOpen, setAddUsersOpen] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [addUsersError, setAddUsersError] = useState<string | null>(null);
@@ -109,6 +122,9 @@ export default function Messaging() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const requestedRoomId = typeof location.state === 'object' && location.state && 'roomId' in location.state
+    ? String((location.state as { roomId?: string }).roomId ?? '')
+    : '';
 
   const activeRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) ?? null,
@@ -119,6 +135,7 @@ export default function Messaging() {
     () => (selectedDmUserId ? dmConversations.find((c) => c.other_user === selectedDmUserId) ?? null : null),
     [dmConversations, selectedDmUserId],
   );
+  const departmentOptions = DEPARTMENT_OPTIONS;
 
   const directoryMap = useMemo(() => {
     const map = new Map<string, DirectoryUser>();
@@ -131,6 +148,36 @@ export default function Messaging() {
     [directoryMap, selectedDmUserId],
   );
 
+  const filteredRooms = useMemo(() => {
+    const query = threadSearch.trim().toLowerCase();
+    if (!query) return rooms;
+    return rooms.filter((room) =>
+      [room.name, room.department ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [rooms, threadSearch]);
+
+  const filteredDmConversations = useMemo(() => {
+    const query = threadSearch.trim().toLowerCase();
+    if (!query) return dmConversations;
+    return dmConversations.filter((conversation) => {
+      const otherUser = directoryMap.get(conversation.other_user);
+      return [
+        otherUser?.username ?? '',
+        otherUser?.email ?? '',
+        otherUser?.department ?? '',
+        otherUser?.role ?? '',
+        conversation.last_message ?? '',
+        conversation.other_user,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [directoryMap, dmConversations, threadSearch]);
+
   const wsRef = useRef<WsManager | null>(null);
   const lastDmSendRef = useRef<{
     to: string;
@@ -138,24 +185,35 @@ export default function Messaging() {
     localId: string;
   } | null>(null);
   const dmPendingLocalIdsRef = useRef<Record<string, string[]>>({});
+  const roomPendingLocalIdsRef = useRef<string[]>([]);
   const selectedDmUserIdRef = useRef<string | null>(null);
   const activeKindRef = useRef<'room' | 'dm'>('room');
   const userIdRef = useRef<string | null>(null);
+  const usernameRef = useRef<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
-  async function refreshRooms() {
-    setRoomsLoading(true);
+  const refreshRooms = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) {
+      setRoomsLoading(true);
+    }
     try {
       const next = await getRooms();
       setRooms(next);
-      if (!selectedRoomId && next.length > 0) setSelectedRoomId(next[0].id);
+      setSelectedRoomId((current) => {
+        if (current && next.some((room) => room.id === current)) {
+          return current;
+        }
+        return next[0]?.id ?? null;
+      });
     } finally {
-      setRoomsLoading(false);
+      if (!options.silent) {
+        setRoomsLoading(false);
+      }
     }
-  }
+  }, []);
 
-  async function refreshDms() {
+  const refreshDms = useCallback(async () => {
     try {
       const [convos, unread] = await Promise.all([
         listDmConversations(),
@@ -171,13 +229,34 @@ export default function Messaging() {
       // best-effort; don't block messaging UI
       console.error(e);
     }
-  }
+  }, []);
 
   useEffect(() => {
     refreshRooms().catch(console.error);
     refreshDms().catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useLiveRefresh(
+    async () => {
+      await Promise.all([
+        refreshRooms({ silent: true }),
+        refreshDms(),
+      ]);
+    },
+    {
+      enabled: Boolean(user?.id),
+      intervalMs: 8000,
+    },
+  );
+
+  useEffect(() => {
+    if (!requestedRoomId) return;
+    if (!rooms.some((room) => room.id === requestedRoomId)) return;
+    setActiveKind('room');
+    setSelectedDmUserId(null);
+    setSelectedRoomId(requestedRoomId);
+  }, [requestedRoomId, rooms]);
 
   useEffect(() => {
     // load directory for DM display + new DM modal
@@ -198,7 +277,8 @@ export default function Messaging() {
 
   useEffect(() => {
     userIdRef.current = user?.id ?? null;
-  }, [user?.id]);
+    usernameRef.current = user?.username ?? null;
+  }, [user?.id, user?.username]);
 
   useEffect(() => {
     let mounted = true;
@@ -281,19 +361,30 @@ export default function Messaging() {
 
       switch (msg.type) {
         case 'message': {
-          // room broadcast
-          setRoomMessages((prev) => [
-            ...prev,
-            {
-              id: msg.message_id,
-              room_id: msg.room_id,
-              sender_id: msg.from,
-              sender_username: msg.from,
-              content: msg.content,
-              timestamp: msg.timestamp,
-              created_at: msg.timestamp,
-            },
-          ]);
+          // room broadcast — replace optimistic local message if it's our own echo
+          const pendingIds = roomPendingLocalIdsRef.current;
+          const localId = pendingIds.length > 0 ? pendingIds.shift() : undefined;
+          roomPendingLocalIdsRef.current = pendingIds;
+
+          const realMsg = {
+            id: msg.message_id,
+            room_id: msg.room_id,
+            sender_id: msg.sender_id ?? msg.from,
+            sender_username: msg.sender_username ?? msg.from,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            created_at: msg.timestamp,
+            is_read: false,
+          };
+
+          if (localId) {
+            // replace the optimistic placeholder with the confirmed server message
+            setRoomMessages((prev) =>
+              prev.map((m) => (m.id === localId ? { ...realMsg, sender_id: currentUserId ?? realMsg.sender_id } : m))
+            );
+          } else {
+            setRoomMessages((prev) => [...prev, realMsg]);
+          }
           break;
         }
         case 'dm': {
@@ -357,10 +448,10 @@ export default function Messaging() {
               prev.map((m) =>
                 m.id === localId
                   ? {
-                      ...m,
-                      id: msg.message_id,
-                      created_at: msg.timestamp,
-                    }
+                    ...m,
+                    id: msg.message_id,
+                    created_at: msg.timestamp,
+                  }
                   : m,
               ),
             );
@@ -368,8 +459,14 @@ export default function Messaging() {
           break;
         }
         case 'message_read': {
-          // Mark that message as read in local history (so "Seen" works like Instagram)
           setDmMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.message_id && currentUserId && m.sender_id === currentUserId
+                ? { ...m, is_read: true }
+                : m,
+            ),
+          );
+          setRoomMessages((prev) =>
             prev.map((m) =>
               m.id === msg.message_id && currentUserId && m.sender_id === currentUserId
                 ? { ...m, is_read: true }
@@ -463,6 +560,26 @@ export default function Messaging() {
     return null;
   }, [dmMessages, user?.id]);
 
+  const lastSelfRoomMessageId = useMemo(() => {
+    if (!user?.id || !selectedRoomId) return null;
+    for (let i = roomMessages.length - 1; i >= 0; i--) {
+      const m = roomMessages[i];
+      if (m.sender_id === user.id && !m.id.startsWith('local-')) return m.id;
+    }
+    return null;
+  }, [roomMessages, user?.id, selectedRoomId]);
+
+  // When viewing a room, send read receipts for the latest message from others
+  useEffect(() => {
+    if (activeKind !== 'room' || !selectedRoomId || roomMessages.length === 0) return;
+    const lastOtherMsg = [...roomMessages]
+      .reverse()
+      .find((m) => m.sender_id !== user?.id && !m.id.startsWith('local-'));
+    if (!lastOtherMsg) return;
+    wsRef.current?.send({ type: 'read', message_id: lastOtherMsg.id, from: lastOtherMsg.sender_id });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKind, selectedRoomId, roomMessages.length]);
+
   function toDateKey(value: string | undefined | null): string {
     if (!value) return 'unknown';
     const d = new Date(value);
@@ -502,13 +619,18 @@ export default function Messaging() {
   }, [users, userSearch]);
 
   async function openAddUsers() {
+    if (!selectedRoomId) return;
     setAddUsersError(null);
     setSelectedUserIds(new Set());
     setAddUsersOpen(true);
     setUsersLoading(true);
     try {
-      const data = await listUsers();
-      setUsers(data.filter((u) => u.is_active));
+      const [data, membersRes] = await Promise.all([
+        listDirectoryUsers(),
+        getRoomMembers(selectedRoomId)
+      ]);
+      const memberSet = new Set(membersRes.members);
+      setUsers(data.filter((u) => u.is_active && u.id !== user?.id && !memberSet.has(u.id)));
     } catch (e) {
       setAddUsersError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
@@ -519,7 +641,7 @@ export default function Messaging() {
   async function submitCreateRoom() {
     setCreateError(null);
     const name = createName.trim();
-    const dept = createDept.trim();
+    const dept = createDept.trim() || getPreferredDepartment(user?.department);
     if (!name) {
       setCreateError('Room name is required');
       return;
@@ -601,6 +723,23 @@ export default function Messaging() {
       if (!selectedRoomId) return;
       sendWs({ type: 'room', room_id: selectedRoomId, content });
       setDraft('');
+      // Optimistic update — appears on right immediately
+      if (user?.id) {
+        const localId = `local-room-${Date.now()}`;
+        roomPendingLocalIdsRef.current = [...roomPendingLocalIdsRef.current, localId];
+        setRoomMessages((prev) => [
+          ...prev,
+          {
+            id: localId,
+            room_id: selectedRoomId,
+            sender_id: user.id,
+            sender_username: user.username,
+            content,
+            timestamp: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
       return;
     }
 
@@ -663,9 +802,9 @@ export default function Messaging() {
           <div className="flex items-center">
             <h1 className="text-base font-bold text-primary hidden sm:block">Security Operations</h1>
             <div className="hidden sm:block h-4 w-px bg-border mx-4"></div>
-          <span className="text-xs sm:text-sm font-medium text-muted">
-            Communications <span className="mx-1">&gt;</span> <span className="text-[#4f8ef7]">Internal Comms</span>
-          </span>
+            <span className="text-xs sm:text-sm font-medium text-muted">
+              Communications <span className="mx-1">&gt;</span> <span className="text-[#4f8ef7]">Internal Comms</span>
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
@@ -674,6 +813,8 @@ export default function Messaging() {
             <input
               type="text"
               placeholder="Search threads..."
+              value={threadSearch}
+              onChange={(e) => setThreadSearch(e.target.value)}
               className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7] w-64 transition-all placeholder:text-muted"
             />
           </div>
@@ -692,11 +833,11 @@ export default function Messaging() {
         <div className={`${(selectedRoomId || selectedDmUserId) ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r border-border bg-page flex-col py-2 overflow-y-auto transition-colors`}>
           <div className="px-6 py-4 flex justify-between items-center">
             <h4 className="text-[10px] font-bold text-muted uppercase tracking-widest">Security Rooms</h4>
-            {isAdmin && (
+            {isManagerOrAbove && (
               <button
                 onClick={() => {
                   setCreateError(null);
-                  setCreateDept(user?.department ?? 'SOC');
+                  setCreateDept(getPreferredDepartment(user?.department));
                   setCreateOpen(true);
                 }}
                 className="text-[#4f8ef7] hover:text-[#3b7ae5] transition-colors flex items-center gap-1 text-xs font-bold"
@@ -712,7 +853,10 @@ export default function Messaging() {
             {!roomsLoading && rooms.length === 0 && (
               <div className="px-6 py-3 text-xs font-medium text-muted">No rooms yet.</div>
             )}
-            {rooms.map((room) => {
+            {!roomsLoading && rooms.length > 0 && filteredRooms.length === 0 && (
+              <div className="px-6 py-3 text-xs font-medium text-muted">No rooms match your search.</div>
+            )}
+            {filteredRooms.map((room) => {
               const isActive = room.id === selectedRoomId;
               return (
                 <button
@@ -760,7 +904,10 @@ export default function Messaging() {
             {dmConversations.length === 0 && (
               <div className="px-6 py-3 text-xs font-medium text-muted">No conversations yet.</div>
             )}
-            {dmConversations.map((c) => {
+            {dmConversations.length > 0 && filteredDmConversations.length === 0 && (
+              <div className="px-6 py-3 text-xs font-medium text-muted">No direct messages match your search.</div>
+            )}
+            {filteredDmConversations.map((c) => {
               const unread = dmUnread[c.other_user]?.unread_count ?? 0;
               const active = activeKind === 'dm' && selectedDmUserId === c.other_user;
               const other = directoryMap.get(c.other_user);
@@ -798,11 +945,10 @@ export default function Messaging() {
                       });
                     }
                   }}
-                  className={`w-full flex items-start gap-4 px-6 py-3 transition-colors border-l-2 ${
-                    active
-                      ? 'bg-[#4f8ef7]/5 border-l-[#4f8ef7]'
-                      : 'border-l-transparent hover:bg-card hover:border-l-border text-muted hover:text-primary'
-                  }`}
+                  className={`w-full flex items-start gap-4 px-6 py-3 transition-colors border-l-2 ${active
+                    ? 'bg-[#4f8ef7]/5 border-l-[#4f8ef7]'
+                    : 'border-l-transparent hover:bg-card hover:border-l-border text-muted hover:text-primary'
+                    }`}
                 >
                   <div className="relative w-8 h-8 rounded-full bg-card text-muted flex items-center justify-center text-xs font-bold flex-shrink-0 border border-border">
                     {displayName.slice(0, 2).toUpperCase()}
@@ -833,8 +979,8 @@ export default function Messaging() {
           {/* Chat Header */}
           <div className="px-3 sm:px-6 flex items-center justify-between border-b border-border bg-page transition-colors flex-shrink-0 h-20">
             <div className="flex items-center gap-2 sm:gap-4">
-              <button 
-                onClick={() => setSelectedRoomId(null)} 
+              <button
+                onClick={() => setSelectedRoomId(null)}
                 className="md:hidden flex items-center justify-center p-2 -ml-2 text-muted hover:text-primary hover:bg-card rounded-md transition-colors mr-1 cursor-pointer"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -898,142 +1044,134 @@ export default function Messaging() {
               className={`flex-1 overflow-y-auto p-6 md:p-8 flex flex-col gap-6 ${detailsOpen ? 'border-r border-border' : ''}`}
             >
 
-            {activeKind === 'room' && messagesLoading && (
-              <div className="text-xs font-medium text-muted">Loading messages…</div>
-            )}
+              {activeKind === 'room' && messagesLoading && (
+                <div className="text-xs font-medium text-muted">Loading messages…</div>
+              )}
 
-            {activeKind === 'room' && !messagesLoading && roomMessages.length === 0 && (
-              <div className="text-xs font-medium text-muted">No messages yet.</div>
-            )}
+              {activeKind === 'room' && !messagesLoading && roomMessages.length === 0 && (
+                <div className="text-xs font-medium text-muted">No messages yet.</div>
+              )}
 
-            {activeKind === 'room' && roomMessages
-              .filter((m) => (m as any).is_deleted !== true && m.content !== '[deleted]')
-              .map((msg, idx, arr) => {
-              const dateKey = toDateKey(msg.created_at ?? msg.timestamp);
-              const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at ?? arr[idx - 1]?.timestamp) : null;
-              const showDivider = idx === 0 || dateKey !== prevKey;
-              const isSelf = !!user && msg.sender_id === user.id;
-              const senderLabel = msg.username ?? msg.sender_username ?? msg.sender_id;
+              {activeKind === 'room' && roomMessages
+                .filter((m) => (m as any).is_deleted !== true && m.content !== '[deleted]')
+                .map((msg, idx, arr) => {
+                  const dateKey = toDateKey(msg.created_at ?? msg.timestamp);
+                  const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at ?? arr[idx - 1]?.timestamp) : null;
+                  const showDivider = idx === 0 || dateKey !== prevKey;
+                  const isSelf = !!user && msg.sender_id === user.id;
+                  const senderLabel = msg.username ?? msg.sender_username ?? msg.sender_id;
 
-              if ((msg as any).isSystemAlert) {
-                return (
-                  <div key={msg.id} className="flex justify-center my-2">
-                    <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{msg.content}</span>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (isSelf) {
-                return (
-                  <div key={msg.id} className="flex flex-col items-end gap-1 ml-auto max-w-2xl">
-                    {showDivider && (
-                      <div className="flex items-center justify-center my-4 w-full">
-                        <div className="h-px bg-border flex-1"></div>
-                        <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
-                          {formatDayLabel(dateKey)}
-                        </span>
-                        <div className="h-px bg-border flex-1"></div>
+                  if ((msg as any).isSystemAlert) {
+                    return (
+                      <div key={msg.id} className="flex justify-center my-2">
+                        <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest">{msg.content}</span>
+                        </div>
                       </div>
-                    )}
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-xs font-medium text-muted">
-                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
-                      </span>
-                      <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                    </div>
-                    <div className="bg-[#4f8ef7] text-white p-4 rounded-2xl rounded-tr-sm shadow-md text-sm leading-relaxed">
-                      {msg.content}
-                    </div>
-                  </div>
-                );
-              }
+                    );
+                  }
 
-              return (
-                <div key={msg.id} className="flex flex-col gap-2 max-w-2xl">
-                  {showDivider && (
-                    <div className="flex items-center justify-center my-4 w-full">
-                      <div className="h-px bg-border flex-1"></div>
-                      <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
-                        {formatDayLabel(dateKey)}
-                      </span>
-                      <div className="h-px bg-border flex-1"></div>
-                    </div>
-                  )}
-                  <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-card text-muted flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1 shadow-sm border border-border">
-                    {senderLabel.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="flex flex-col gap-1 items-start">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                      <span className="text-xs font-medium text-muted">
-                        {msg.created_at ? new Date(msg.created_at).toLocaleTimeString() : ''}
-                      </span>
-                    </div>
-                    <div className="bg-card border border-border text-primary p-4 rounded-2xl rounded-tl-sm shadow-sm text-sm leading-relaxed">
-                      {msg.content}
-                    </div>
-                  </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {activeKind === 'dm' && dmLoading && (
-              <div className="text-xs font-medium text-muted">Loading conversation…</div>
-            )}
-
-            {activeKind === 'dm' && !dmLoading && dmMessages.length === 0 && (
-              <div className="text-xs font-medium text-muted">No direct messages yet.</div>
-            )}
-
-            {activeKind === 'dm' && dmMessages
-              .filter((m) => m.is_deleted !== true && m.content !== '[deleted]')
-              .map((msg, idx, arr) => {
-              const dateKey = toDateKey(msg.created_at);
-              const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at) : null;
-              const showDivider = idx === 0 || dateKey !== prevKey;
-              const isSelf = !!user && msg.sender_id === user.id;
-              const other = selectedDmUserId ? directoryMap.get(selectedDmUserId) : undefined;
-              const senderLabel = isSelf ? (user?.username ?? 'Me') : (other?.username ?? activeDm?.other_user ?? msg.sender_id);
-              const showSeen =
-                isSelf &&
-                msg.id === lastSelfDmMessageId &&
-                msg.is_read === true;
-              return (
-                <div key={msg.id} className="flex flex-col gap-2">
-                  {showDivider && (
-                    <div className="flex items-center justify-center my-4 w-full">
-                      <div className="h-px bg-border flex-1"></div>
-                      <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
-                        {formatDayLabel(dateKey)}
-                      </span>
-                      <div className="h-px bg-border flex-1"></div>
-                    </div>
-                  )}
-
-                  <div className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-2xl ${isSelf ? 'text-right' : 'text-left'}`}>
-                      <div className="flex items-center gap-2 mb-1 justify-between">
-                        <span className="text-sm font-bold text-primary">{senderLabel}</span>
-                        <span className="text-xs font-medium text-muted">{new Date(msg.created_at).toLocaleTimeString()}</span>
-                      </div>
-                      <div className={`${isSelf ? 'bg-[#4f8ef7] text-white' : 'bg-card border border-border text-primary'} p-4 rounded-2xl shadow-sm text-sm leading-relaxed`}>
-                        {msg.content}
-                      </div>
-                      {showSeen && (
-                        <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted">
-                          Seen
+                  return (
+                    <div key={msg.id}>
+                      {showDivider && (
+                        <div className="flex items-center justify-center my-4 w-full">
+                          <div className="h-px bg-border flex-1"></div>
+                          <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
+                            {formatDayLabel(dateKey)}
+                          </span>
+                          <div className="h-px bg-border flex-1"></div>
                         </div>
                       )}
+                      <div className={`flex items-end gap-2 ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                        {!isSelf && (
+                          <div className="w-7 h-7 rounded-full bg-card text-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0 border border-border">
+                            {senderLabel.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className={`flex flex-col gap-0.5 max-w-[70%] ${isSelf ? 'items-end' : 'items-start'}`}>
+                          <span className="text-[11px] font-semibold text-muted px-1 flex items-center gap-1 opacity-80">
+                            {isSelf ? '' : senderLabel}{' '}
+                            <span className="font-normal">{msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], {timeStyle: 'short'}) : ''}</span>
+                          </span>
+                          <div className={`inline-block px-3 py-2 rounded-2xl text-sm leading-snug break-words ${
+                            isSelf
+                              ? 'bg-[#4f8ef7] text-white rounded-br-sm'
+                              : 'bg-card border border-border text-primary rounded-bl-sm'
+                          }`}>
+                            {msg.content}
+                          </div>
+                          {isSelf && msg.id === lastSelfRoomMessageId && msg.is_read && (
+                            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted px-1">
+                              Seen
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+
+              {activeKind === 'dm' && dmLoading && (
+                <div className="text-xs font-medium text-muted">Loading conversation…</div>
+              )}
+
+              {activeKind === 'dm' && !dmLoading && dmMessages.length === 0 && (
+                <div className="text-xs font-medium text-muted">No direct messages yet.</div>
+              )}
+
+              {activeKind === 'dm' && dmMessages
+                .filter((m) => m.is_deleted !== true && m.content !== '[deleted]')
+                .map((msg, idx, arr) => {
+                  const dateKey = toDateKey(msg.created_at);
+                  const prevKey = idx > 0 ? toDateKey(arr[idx - 1]?.created_at) : null;
+                  const showDivider = idx === 0 || dateKey !== prevKey;
+                  const isSelf = !!user && msg.sender_id === user.id;
+                  const other = selectedDmUserId ? directoryMap.get(selectedDmUserId) : undefined;
+                  const senderLabel = isSelf ? (user?.username ?? 'Me') : (other?.username ?? activeDm?.other_user ?? msg.sender_id);
+                  const showSeen =
+                    isSelf &&
+                    msg.id === lastSelfDmMessageId &&
+                    msg.is_read === true;
+                  return (
+                    <div key={msg.id}>
+                      {showDivider && (
+                        <div className="flex items-center justify-center my-4 w-full">
+                          <div className="h-px bg-border flex-1"></div>
+                          <span className="px-4 text-[10px] font-bold text-muted uppercase tracking-widest bg-page">
+                            {formatDayLabel(dateKey)}
+                          </span>
+                          <div className="h-px bg-border flex-1"></div>
+                        </div>
+                      )}
+                      <div className={`flex items-end gap-2 mb-1 ${isSelf ? 'justify-end' : 'justify-start'}`}>
+                        {!isSelf && (
+                          <div className="w-7 h-7 rounded-full bg-card text-muted flex items-center justify-center text-[10px] font-bold flex-shrink-0 border border-border">
+                            {senderLabel.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className={`flex flex-col gap-0.5 max-w-[70%] ${isSelf ? 'items-end' : 'items-start'}`}>
+                          <span className="text-[11px] font-semibold text-muted px-1 flex items-center gap-1 opacity-80">
+                            {!isSelf && <span className="text-primary">{senderLabel} </span>}
+                            {new Date(msg.created_at).toLocaleTimeString([], {timeStyle: 'short'})}
+                          </span>
+                          <div className={`inline-block px-3 py-2 rounded-2xl text-sm leading-snug break-words ${
+                            isSelf
+                              ? 'bg-[#4f8ef7] text-white rounded-br-sm'
+                              : 'bg-card border border-border text-primary rounded-bl-sm'
+                          }`}>
+                            {msg.content}
+                          </div>
+                          {showSeen && (
+                            <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted px-1">
+                              Seen
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
 
             {/* Inline details panel (no popup) */}
@@ -1130,12 +1268,15 @@ export default function Messaging() {
                   }
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void submitSend();
+                    }
+                  }}
                   disabled={activeKind === 'room' ? !selectedRoomId : !selectedDmUserId}
                   className="flex-1 bg-transparent border-none outline-none text-sm text-primary px-3 placeholder:text-muted disabled:opacity-60"
                 />
-                <button className="p-2 text-muted hover:text-primary transition-colors flex-shrink-0 mr-2">
-                  <Smile className="w-5 h-5" />
-                </button>
                 <button
                   onClick={submitSend}
                   className="flex items-center justify-center gap-2 bg-[#4f8ef7] hover:bg-[#3b7ae5] text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md shadow-[#4f8ef7]/20 transition-all active:scale-95 flex-shrink-0"
@@ -1145,7 +1286,7 @@ export default function Messaging() {
               </div>
             </div>
             <div className="max-w-4xl mx-auto flex justify-end mt-2">
-              <span className="text-[10px] font-bold text-muted uppercase tracking-widest">⌘ + Enter to send</span>
+              <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Enter to send</span>
             </div>
             {sendError && (
               <div className="max-w-4xl mx-auto mt-2 text-xs font-medium text-red-500">
@@ -1156,7 +1297,7 @@ export default function Messaging() {
         </div>
       </div>
 
-      {/* Create Room Modal (IT_ADMIN only) */}
+      {/* Create Room Modal */}
       <ModalShell
         title="Create a room"
         open={createOpen}
@@ -1179,12 +1320,17 @@ export default function Messaging() {
             <label className="text-xs font-bold text-muted uppercase tracking-widest">
               Department
             </label>
-            <input
+            <select
               value={createDept}
               onChange={(e) => setCreateDept(e.target.value)}
-              placeholder="e.g. SOC"
-              className="w-full px-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7] placeholder:text-muted"
-            />
+              className="w-full px-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7]"
+            >
+              {departmentOptions.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
           </div>
 
           {createError && (
@@ -1404,6 +1550,8 @@ export default function Messaging() {
               const u = directoryMap.get(id);
               const name = u?.username ?? id;
               const isSelf = user?.id === id;
+              const isOwner = activeRoom?.created_by === id;
+              const canRemove = !isSelf && (!isOwner || user?.role === 'IT_ADMIN');
               return (
                 <div
                   key={id}
@@ -1411,27 +1559,39 @@ export default function Messaging() {
                 >
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-primary truncate">{name}{isSelf ? ' (you)' : ''}</div>
+                    <div className="text-xs text-muted truncate">{formatDirectoryMeta(u)}</div>
                   </div>
-                  <button
-                    disabled={isSelf || removingMemberId === id}
-                    onClick={async () => {
-                      if (!selectedRoomId) return;
-                      setRemovingMemberId(id);
-                      setMembersError(null);
-                      try {
-                        await removeUserFromRoom(selectedRoomId, id);
-                        const res = await getRoomMembers(selectedRoomId);
-                        setMemberIds(res.members ?? []);
-                      } catch (e) {
-                        setMembersError(e instanceof Error ? e.message : 'Failed to remove user');
-                      } finally {
-                        setRemovingMemberId(null);
-                      }
-                    }}
-                    className="px-3 py-2 rounded-lg text-xs font-bold bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors border border-red-500/20 disabled:opacity-60"
-                  >
-                    {removingMemberId === id ? 'Removing…' : 'Remove'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isOwner && (
+                      <div className="text-[10px] font-bold text-[#4f8ef7] uppercase tracking-widest flex-shrink-0">
+                        OWNER
+                      </div>
+                    )}
+                    <button
+                      disabled={!canRemove || removingMemberId === id}
+                      onClick={async () => {
+                        if (!selectedRoomId) return;
+                        setRemovingMemberId(id);
+                        setMembersError(null);
+                        try {
+                          await removeUserFromRoom(selectedRoomId, id);
+                          const res = await getRoomMembers(selectedRoomId);
+                          setMemberIds(res.members ?? []);
+                        } catch (e) {
+                          setMembersError(e instanceof Error ? e.message : 'Failed to remove user');
+                        } finally {
+                          setRemovingMemberId(null);
+                        }
+                      }}
+                      className="px-3 py-2 rounded-lg text-xs font-bold bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors border border-red-500/20 disabled:opacity-60"
+                    >
+                      {isOwner && user?.role !== 'IT_ADMIN'
+                        ? 'Owner'
+                        : removingMemberId === id
+                          ? 'Removing…'
+                          : 'Remove'}
+                    </button>
+                  </div>
                 </div>
               );
             })}

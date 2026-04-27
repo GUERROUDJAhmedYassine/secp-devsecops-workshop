@@ -131,3 +131,25 @@ class UserUpdate(BaseModel):
 class AdminUserUpdate(BaseModel):
     role: Optional[UserRole] = None
     department: Optional[str] = None
+
+class DirectoryUserResponse(BaseModel):
+    id: str
+    username: str
+    email: EmailStr
+    role: str
+    department: Optional[str] = None
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def build(cls, user):
+        return cls(
+            id=str(user.id),
+            username=user.username,
+            email=user.email,
+            role=user.role.value if hasattr(user.role, "value") else str(user.role),
+            department=user.department,
+            is_active=user.is_active,
+        )

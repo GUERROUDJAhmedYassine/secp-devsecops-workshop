@@ -1,0 +1,4 @@
+"""
+SECP Mail Service package.
+"""
+

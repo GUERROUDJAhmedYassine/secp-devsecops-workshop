@@ -34,6 +34,7 @@ CREATE TABLE app.rooms (
     created_by  UUID         NOT NULL REFERENCES app.users(id),
     created_at  TIMESTAMP    DEFAULT NOW()
 );
+
 CREATE TABLE app.room_members (
     room_id    UUID      NOT NULL REFERENCES app.rooms(id) ON DELETE CASCADE,
     user_id    UUID      NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
@@ -60,7 +61,7 @@ CREATE TABLE app.messages (
     room_id         UUID    NULL     REFERENCES app.rooms(id),
     content         TEXT    NOT NULL,
     is_deleted      BOOLEAN DEFAULT FALSE,
-    is_read BOOLEAN DEFAULT FALSE,
+    is_read         BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW(),
     CONSTRAINT chk_message_target CHECK (
         (recipient_id IS NOT NULL AND room_id IS NULL) OR

@@ -60,11 +60,12 @@ export function useMessaging(activeRoomId: string | null) {
             {
               id: payload.message_id,
               room_id: payload.room_id,
-              sender_id: payload.from,
-              sender_username: payload.from,
+              sender_id: payload.sender_id ?? payload.from,
+              sender_username: payload.sender_username ?? payload.from,
               content: payload.content,
               timestamp: payload.timestamp,
               created_at: payload.timestamp,
+              is_read: false,
             },
           ]);
           setRooms((prev) =>

@@ -27,11 +27,11 @@ class JoinRoomRequest(BaseModel):
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_room(body: CreateRoomRequest, current_user: dict = Depends(get_current_user)):
-    """Create a new room. Restricted to IT_ADMIN role."""
-    if current_user["role"] != "IT_ADMIN":
+    """Create a new chat room. Restricted to IT_ADMIN and MANAGER roles."""
+    if current_user["role"] not in ("IT_ADMIN", "MANAGER"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only IT_ADMIN can create rooms"
+            detail="Only IT_ADMIN or MANAGER can create rooms"
         )
 
     result = await room_service.create_room(
@@ -44,8 +44,31 @@ async def create_room(body: CreateRoomRequest, current_user: dict = Depends(get_
 
 @router.get("/")
 async def list_rooms(current_user: dict = Depends(get_current_user)):
-    """List rooms the current user is a member of."""
+    """List all rooms the current user is a member of, including project chats."""
     return await room_service.list_rooms_for_user(str(current_user["id"]))
+
+
+@router.post("/projects", status_code=status.HTTP_201_CREATED)
+async def create_project_room(body: CreateRoomRequest, current_user: dict = Depends(get_current_user)):
+    """Create a project workspace backed by a chat room."""
+    if current_user["role"] not in ("IT_ADMIN", "MANAGER"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only IT_ADMIN or MANAGER can create projects"
+        )
+
+    return await room_service.create_room(
+        name=body.name,
+        department=body.department,
+        created_by=str(current_user["id"]),
+        is_project=True,
+    )
+
+
+@router.get("/projects")
+async def list_project_rooms(current_user: dict = Depends(get_current_user)):
+    """List only project-backed rooms the current user is a member of."""
+    return await room_service.list_rooms_for_user(str(current_user["id"]), project_only=True)
 
 
 @router.post("/{room_id}/join")
@@ -80,7 +103,12 @@ async def remove_room_member(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only IT_ADMIN or MANAGER can remove users from rooms"
         )
-    return await room_service.remove_user_from_room(room_id=room_id, user_id=user_id)
+    return await room_service.remove_user_from_room(
+        room_id=room_id,
+        user_id=user_id,
+        actor_id=str(current_user["id"]),
+        actor_role=current_user["role"],
+    )
 
 
 @router.get("/{room_id}/messages")

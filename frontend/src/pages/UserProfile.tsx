@@ -1,6 +1,6 @@
 
 import {
-  Search, Bell, Moon, Sun, MoreVertical,
+  Bell, Moon, Sun, MoreVertical,
   Eye, EyeOff, ShieldCheck, RefreshCw, AlertTriangle, UserCheck, Menu, Loader2
 } from 'lucide-react';
 import { useThemeContext } from '../context/ThemeContext';
@@ -91,14 +91,6 @@ export default function UserProfile() {
           <h1 className="text-base sm:text-lg font-bold text-primary hidden sm:block">Security Operations</h1>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
-          <div className="relative hidden md:block">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input
-              type="text"
-              placeholder="Search operations..."
-              className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7] w-64 transition-all placeholder:text-muted"
-            />
-          </div>
           <button className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors"><Bell className="w-4 h-4" /></button>
           <button onClick={toggleTheme} className="p-2.5 text-muted hover:text-primary hover:bg-card rounded-lg transition-colors">
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}

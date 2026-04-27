@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Search, Bell, Moon, Sun, MoreVertical, Plus,
   Lock, Shield, Info, AlertTriangle, Send,
@@ -7,6 +8,8 @@ import {
 import { useThemeContext } from '../context/ThemeContext';
 import { useSidebar } from '../context/SidebarContext';
 import { useAuth } from '../hooks/useAuth';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { DEPARTMENT_OPTIONS, getPreferredDepartment } from '../lib/departments';
 import {
   addUserToRoom,
   createMessagingSocket,
@@ -21,9 +24,7 @@ import {
   markDmRead,
   removeUserFromRoom,
 } from '../api/messaging';
-import { listUsers } from '../api/admin';
 import type { Room, RoomMessage, DirectMessage, DmConversation, UnreadCount, MessagingWsInbound, MessagingWsOutbound } from '../types/messaging.types';
-import type { User } from '../types/user.types';
 import { listDirectoryUsers } from '../api/auth';
 import type { WsManager } from '../lib/websocket';
 import type { DirectoryUser } from '../types/user.types';
@@ -62,10 +63,21 @@ function ModalShell({
   );
 }
 
+function formatDirectoryMeta(user: DirectoryUser | undefined): string {
+  if (!user) {
+    return 'Directory account';
+  }
+  const parts = [user.email, user.department, user.role]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(' • ') : 'Directory account';
+}
+
 export default function Messaging() {
+  const location = useLocation();
   const { theme, toggleTheme } = useThemeContext();
   const { toggleSidebar } = useSidebar();
-  const { user, isAdmin, isManagerOrAbove } = useAuth();
+  const { user, isManagerOrAbove } = useAuth();
   const [activeKind, setActiveKind] = useState<'room' | 'dm'>('room');
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedDmUserId, setSelectedDmUserId] = useState<string | null>(null);
@@ -84,19 +96,20 @@ export default function Messaging() {
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [threadSearch, setThreadSearch] = useState('');
 
   const [newDmOpen, setNewDmOpen] = useState(false);
   const [newDmSearch, setNewDmSearch] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
-  const [createDept, setCreateDept] = useState(user?.department ?? 'SOC');
+  const [createDept, setCreateDept] = useState(getPreferredDepartment(user?.department));
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSaving, setCreateSaving] = useState(false);
 
   const [addUsersOpen, setAddUsersOpen] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [addUsersError, setAddUsersError] = useState<string | null>(null);
@@ -109,6 +122,9 @@ export default function Messaging() {
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const requestedRoomId = typeof location.state === 'object' && location.state && 'roomId' in location.state
+    ? String((location.state as { roomId?: string }).roomId ?? '')
+    : '';
 
   const activeRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) ?? null,
@@ -119,6 +135,7 @@ export default function Messaging() {
     () => (selectedDmUserId ? dmConversations.find((c) => c.other_user === selectedDmUserId) ?? null : null),
     [dmConversations, selectedDmUserId],
   );
+  const departmentOptions = DEPARTMENT_OPTIONS;
 
   const directoryMap = useMemo(() => {
     const map = new Map<string, DirectoryUser>();
@@ -130,6 +147,36 @@ export default function Messaging() {
     () => (selectedDmUserId ? directoryMap.get(selectedDmUserId) : undefined),
     [directoryMap, selectedDmUserId],
   );
+
+  const filteredRooms = useMemo(() => {
+    const query = threadSearch.trim().toLowerCase();
+    if (!query) return rooms;
+    return rooms.filter((room) =>
+      [room.name, room.department ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [rooms, threadSearch]);
+
+  const filteredDmConversations = useMemo(() => {
+    const query = threadSearch.trim().toLowerCase();
+    if (!query) return dmConversations;
+    return dmConversations.filter((conversation) => {
+      const otherUser = directoryMap.get(conversation.other_user);
+      return [
+        otherUser?.username ?? '',
+        otherUser?.email ?? '',
+        otherUser?.department ?? '',
+        otherUser?.role ?? '',
+        conversation.last_message ?? '',
+        conversation.other_user,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [directoryMap, dmConversations, threadSearch]);
 
   const wsRef = useRef<WsManager | null>(null);
   const lastDmSendRef = useRef<{
@@ -146,18 +193,27 @@ export default function Messaging() {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
-  async function refreshRooms() {
-    setRoomsLoading(true);
+  const refreshRooms = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) {
+      setRoomsLoading(true);
+    }
     try {
       const next = await getRooms();
       setRooms(next);
-      if (!selectedRoomId && next.length > 0) setSelectedRoomId(next[0].id);
+      setSelectedRoomId((current) => {
+        if (current && next.some((room) => room.id === current)) {
+          return current;
+        }
+        return next[0]?.id ?? null;
+      });
     } finally {
-      setRoomsLoading(false);
+      if (!options.silent) {
+        setRoomsLoading(false);
+      }
     }
-  }
+  }, []);
 
-  async function refreshDms() {
+  const refreshDms = useCallback(async () => {
     try {
       const [convos, unread] = await Promise.all([
         listDmConversations(),
@@ -173,13 +229,34 @@ export default function Messaging() {
       // best-effort; don't block messaging UI
       console.error(e);
     }
-  }
+  }, []);
 
   useEffect(() => {
     refreshRooms().catch(console.error);
     refreshDms().catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useLiveRefresh(
+    async () => {
+      await Promise.all([
+        refreshRooms({ silent: true }),
+        refreshDms(),
+      ]);
+    },
+    {
+      enabled: Boolean(user?.id),
+      intervalMs: 8000,
+    },
+  );
+
+  useEffect(() => {
+    if (!requestedRoomId) return;
+    if (!rooms.some((room) => room.id === requestedRoomId)) return;
+    setActiveKind('room');
+    setSelectedDmUserId(null);
+    setSelectedRoomId(requestedRoomId);
+  }, [requestedRoomId, rooms]);
 
   useEffect(() => {
     // load directory for DM display + new DM modal
@@ -292,11 +369,12 @@ export default function Messaging() {
           const realMsg = {
             id: msg.message_id,
             room_id: msg.room_id,
-            sender_id: msg.from,   // may be id or username depending on backend
-            sender_username: msg.from,
+            sender_id: msg.sender_id ?? msg.from,
+            sender_username: msg.sender_username ?? msg.from,
             content: msg.content,
             timestamp: msg.timestamp,
             created_at: msg.timestamp,
+            is_read: false,
           };
 
           if (localId) {
@@ -548,11 +626,11 @@ export default function Messaging() {
     setUsersLoading(true);
     try {
       const [data, membersRes] = await Promise.all([
-        listUsers(),
+        listDirectoryUsers(),
         getRoomMembers(selectedRoomId)
       ]);
       const memberSet = new Set(membersRes.members);
-      setUsers(data.filter((u) => u.is_active && !memberSet.has(u.id)));
+      setUsers(data.filter((u) => u.is_active && u.id !== user?.id && !memberSet.has(u.id)));
     } catch (e) {
       setAddUsersError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
@@ -563,7 +641,7 @@ export default function Messaging() {
   async function submitCreateRoom() {
     setCreateError(null);
     const name = createName.trim();
-    const dept = createDept.trim();
+    const dept = createDept.trim() || getPreferredDepartment(user?.department);
     if (!name) {
       setCreateError('Room name is required');
       return;
@@ -735,6 +813,8 @@ export default function Messaging() {
             <input
               type="text"
               placeholder="Search threads..."
+              value={threadSearch}
+              onChange={(e) => setThreadSearch(e.target.value)}
               className="pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7] w-64 transition-all placeholder:text-muted"
             />
           </div>
@@ -753,11 +833,11 @@ export default function Messaging() {
         <div className={`${(selectedRoomId || selectedDmUserId) ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r border-border bg-page flex-col py-2 overflow-y-auto transition-colors`}>
           <div className="px-6 py-4 flex justify-between items-center">
             <h4 className="text-[10px] font-bold text-muted uppercase tracking-widest">Security Rooms</h4>
-            {isAdmin && (
+            {isManagerOrAbove && (
               <button
                 onClick={() => {
                   setCreateError(null);
-                  setCreateDept(user?.department ?? 'SOC');
+                  setCreateDept(getPreferredDepartment(user?.department));
                   setCreateOpen(true);
                 }}
                 className="text-[#4f8ef7] hover:text-[#3b7ae5] transition-colors flex items-center gap-1 text-xs font-bold"
@@ -773,7 +853,10 @@ export default function Messaging() {
             {!roomsLoading && rooms.length === 0 && (
               <div className="px-6 py-3 text-xs font-medium text-muted">No rooms yet.</div>
             )}
-            {rooms.map((room) => {
+            {!roomsLoading && rooms.length > 0 && filteredRooms.length === 0 && (
+              <div className="px-6 py-3 text-xs font-medium text-muted">No rooms match your search.</div>
+            )}
+            {filteredRooms.map((room) => {
               const isActive = room.id === selectedRoomId;
               return (
                 <button
@@ -821,7 +904,10 @@ export default function Messaging() {
             {dmConversations.length === 0 && (
               <div className="px-6 py-3 text-xs font-medium text-muted">No conversations yet.</div>
             )}
-            {dmConversations.map((c) => {
+            {dmConversations.length > 0 && filteredDmConversations.length === 0 && (
+              <div className="px-6 py-3 text-xs font-medium text-muted">No direct messages match your search.</div>
+            )}
+            {filteredDmConversations.map((c) => {
               const unread = dmUnread[c.other_user]?.unread_count ?? 0;
               const active = activeKind === 'dm' && selectedDmUserId === c.other_user;
               const other = directoryMap.get(c.other_user);
@@ -1211,7 +1297,7 @@ export default function Messaging() {
         </div>
       </div>
 
-      {/* Create Room Modal (IT_ADMIN only) */}
+      {/* Create Room Modal */}
       <ModalShell
         title="Create a room"
         open={createOpen}
@@ -1234,12 +1320,17 @@ export default function Messaging() {
             <label className="text-xs font-bold text-muted uppercase tracking-widest">
               Department
             </label>
-            <input
+            <select
               value={createDept}
               onChange={(e) => setCreateDept(e.target.value)}
-              placeholder="e.g. SOC"
-              className="w-full px-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7] placeholder:text-muted"
-            />
+              className="w-full px-4 py-2 bg-card border border-border rounded-lg text-sm text-primary focus:outline-none focus:border-[#4f8ef7]"
+            >
+              {departmentOptions.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
           </div>
 
           {createError && (
@@ -1459,6 +1550,8 @@ export default function Messaging() {
               const u = directoryMap.get(id);
               const name = u?.username ?? id;
               const isSelf = user?.id === id;
+              const isOwner = activeRoom?.created_by === id;
+              const canRemove = !isSelf && (!isOwner || user?.role === 'IT_ADMIN');
               return (
                 <div
                   key={id}
@@ -1466,27 +1559,39 @@ export default function Messaging() {
                 >
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-primary truncate">{name}{isSelf ? ' (you)' : ''}</div>
+                    <div className="text-xs text-muted truncate">{formatDirectoryMeta(u)}</div>
                   </div>
-                  <button
-                    disabled={isSelf || removingMemberId === id}
-                    onClick={async () => {
-                      if (!selectedRoomId) return;
-                      setRemovingMemberId(id);
-                      setMembersError(null);
-                      try {
-                        await removeUserFromRoom(selectedRoomId, id);
-                        const res = await getRoomMembers(selectedRoomId);
-                        setMemberIds(res.members ?? []);
-                      } catch (e) {
-                        setMembersError(e instanceof Error ? e.message : 'Failed to remove user');
-                      } finally {
-                        setRemovingMemberId(null);
-                      }
-                    }}
-                    className="px-3 py-2 rounded-lg text-xs font-bold bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors border border-red-500/20 disabled:opacity-60"
-                  >
-                    {removingMemberId === id ? 'Removing…' : 'Remove'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isOwner && (
+                      <div className="text-[10px] font-bold text-[#4f8ef7] uppercase tracking-widest flex-shrink-0">
+                        OWNER
+                      </div>
+                    )}
+                    <button
+                      disabled={!canRemove || removingMemberId === id}
+                      onClick={async () => {
+                        if (!selectedRoomId) return;
+                        setRemovingMemberId(id);
+                        setMembersError(null);
+                        try {
+                          await removeUserFromRoom(selectedRoomId, id);
+                          const res = await getRoomMembers(selectedRoomId);
+                          setMemberIds(res.members ?? []);
+                        } catch (e) {
+                          setMembersError(e instanceof Error ? e.message : 'Failed to remove user');
+                        } finally {
+                          setRemovingMemberId(null);
+                        }
+                      }}
+                      className="px-3 py-2 rounded-lg text-xs font-bold bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors border border-red-500/20 disabled:opacity-60"
+                    >
+                      {isOwner && user?.role !== 'IT_ADMIN'
+                        ? 'Owner'
+                        : removingMemberId === id
+                          ? 'Removing…'
+                          : 'Remove'}
+                    </button>
+                  </div>
                 </div>
               );
             })}

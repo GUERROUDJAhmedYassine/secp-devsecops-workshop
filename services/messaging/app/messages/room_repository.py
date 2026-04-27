@@ -1,6 +1,7 @@
 # messages/room_repository.py
 import logging
 from core.database import get_pool
+from core.time_utils import to_utc_iso
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +16,9 @@ def _format_message(row) -> dict:
         "recipient_id": str(row["recipient_id"]) if row["recipient_id"] else None,
         "room_id": str(row["room_id"]) if row["room_id"] else None,
         "content": row["content"],
+        "is_read": row["is_read"],
         "is_deleted": row["is_deleted"],
-        "created_at": row["created_at"].isoformat()
+        "created_at": to_utc_iso(row["created_at"])
     }
 
 
@@ -29,7 +31,7 @@ async def save_room_message(room_id: str, sender_id: str, content: str) -> dict:
                 """
                 INSERT INTO app.messages (sender_id, recipient_id, room_id, content)
                 VALUES ($1::uuid, NULL, $2::uuid, $3)
-                RETURNING id, sender_id, recipient_id, room_id, content, is_deleted, created_at
+                RETURNING id, sender_id, recipient_id, room_id, content, is_read, is_deleted, created_at
                 """,
                 sender_id, room_id, content
             )
@@ -44,14 +46,19 @@ async def get_room_history(room_id: str, limit: int = 50) -> list[dict]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT m.id, m.sender_id, m.recipient_id, m.room_id,
-                   m.content, m.is_deleted, m.created_at,
+            SELECT recent.id, recent.sender_id, recent.recipient_id, recent.room_id,
+                   recent.content, recent.is_read, recent.is_deleted, recent.created_at,
                    u.username
-            FROM app.messages m
-            JOIN app.users u ON u.id = m.sender_id
-            WHERE m.room_id = $1::uuid AND m.is_deleted = FALSE
-            ORDER BY m.created_at ASC
-            LIMIT $2
+            FROM (
+                SELECT m.id, m.sender_id, m.recipient_id, m.room_id,
+                       m.content, m.is_read, m.is_deleted, m.created_at
+                FROM app.messages m
+                WHERE m.room_id = $1::uuid AND m.is_deleted = FALSE
+                ORDER BY m.created_at DESC
+                LIMIT $2
+            ) recent
+            JOIN app.users u ON u.id = recent.sender_id
+            ORDER BY recent.created_at ASC
             """,
             room_id, limit
         )

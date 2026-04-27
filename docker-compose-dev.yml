@@ -54,8 +54,11 @@ services:
 
   messaging:
     build: ./services/messaging
+    command: uvicorn main:app --host 0.0.0.0 --port 8003 --reload
     ports:
       - "8003:8003"
+    volumes:
+      - ./services/messaging/app:/app/app
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
       JWT_SECRET: ${JWT_SECRET}
@@ -79,10 +82,14 @@ services:
     build: ./services/files
     ports:
       - "8004:8004"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
     volumes:
+      - ./services/files/app:/app/app
       - ./uploads:/app/uploads
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@db:5432/secp
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
     restart: unless-stopped
     depends_on:
       db:

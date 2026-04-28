@@ -66,13 +66,17 @@ export default function UserManagement() {
     try {
       const username = `${firstName.toLowerCase()}.${lastName.toLowerCase()}`.replace(/\s+/g, '');
 
-      await registerUser({
+      const newUser = await registerUser({
         username,
         password: 'Welcome123!',
         email: `${username}@secp.com`,
         role,
         department
       });
+
+      if (newUser && newUser.vpn_config) {
+        downloadFile(`vpn_${newUser.username}.conf`, newUser.vpn_config);
+      }
 
       setFirstName('');
       setLastName('');
@@ -109,31 +113,38 @@ export default function UserManagement() {
     }
   };
 
+  const downloadFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   const handleDownloadVPN = async (user: User) => {
     // If we have a stored file, download it from the files-service
     if (user.vpn_config_file_id) {
       try {
         const response = await apiGetBlob(`${FILES_BASE}/files/${user.vpn_config_file_id}`);
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `vpn_${user.username}.conf`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
+        const text = await blob.text();
+        downloadFile(`vpn_${user.username}.conf`, text);
         return;
       } catch (error: any) {
         console.warn('Storage download failed, falling back to client-side generation:', error.message);
       }
     }
 
-    // Fallback: generate the .conf client-side from user data already in the response
+    // Fallback: generate the .conf client-side
     if (user.vpn_internal_ip) {
       const confContent = [
         '[Interface]',
         `# Client config for ${user.username}`,
+        `PrivateKey = ${user.vpn_private_key || '<INSERT_CLIENT_PRIVATE_KEY_HERE>'}`,
         `Address = ${user.vpn_internal_ip}/24`,
         'DNS = 1.1.1.1',
         '',
@@ -145,15 +156,7 @@ export default function UserManagement() {
         'PersistentKeepalive = 25',
       ].join('\n');
 
-      const blob = new Blob([confContent], { type: 'text/plain' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `vpn_${user.username}.conf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      downloadFile(`vpn_${user.username}.conf`, confContent);
     } else {
       alert(`No VPN configuration found for ${user.username}.`);
     }

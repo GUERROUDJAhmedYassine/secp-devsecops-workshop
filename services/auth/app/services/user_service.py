@@ -71,7 +71,7 @@ Endpoint = {WG_SERVER_ENDPOINT}
 AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 """
-    return pub_b64, next_ip, client_conf
+    return pub_b64, priv_b64, next_ip, client_conf
 
 def upload_vpn_config_to_storage(token: str, username: str, config_str: str) -> str:
     """Uploads the generated .conf file to the files-service and returns the file_id."""
@@ -113,10 +113,10 @@ def register_user(db: Session, body: UserCreate, admin_token: str = None):
         department=body.department,
     )
 
-    # Provision VPN
     try:
-        pub_key, internal_ip, vpn_config = provision_vpn(db, user.username)
+        pub_key, priv_key, internal_ip, vpn_config = provision_vpn(db, user.username)
         user.vpn_public_key = pub_key
+        user.vpn_private_key = priv_key
         user.vpn_internal_ip = internal_ip
         user.vpn_config = vpn_config # Attach for response
         

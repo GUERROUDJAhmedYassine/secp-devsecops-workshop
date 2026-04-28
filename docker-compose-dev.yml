@@ -9,8 +9,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
-      WG_SERVER_PUBLIC_KEY: ${VPN_SERVER_PUBKEY}
-      WG_SERVER_ENDPOINT: ${VPN_SERVER_IP}:51820
+      WG_SERVER_PUBLIC_KEY: ${WG_SERVER_PUBLIC_KEY}
+      WG_SERVER_ENDPOINT: ${WG_SERVER_ENDPOINT}
       WG_CONFIG_PATH: /etc/wireguard/wg0/wg0.conf
     volumes:
       - ./services/auth/app:/app/app
@@ -137,7 +137,7 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Etc/UTC
-      - SERVERURL=${VPN_SERVER_IP}
+      - SERVERURL=secp.abrdns.com
       - SERVERPORT=51820
       - PEERS=1
       - PEERDNS=auto

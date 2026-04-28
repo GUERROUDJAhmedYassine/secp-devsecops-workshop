@@ -4,7 +4,7 @@ import { useThemeContext } from '../../context/ThemeContext';
 import { Link } from 'react-router-dom';
 import { registerUser, listUsers, deleteUser, unlockUser } from '../../api/admin';
 import { apiGetBlob } from '../../lib/apiClient';
-import { FILES_BASE } from '../../lib/constants';
+import { FILES_BASE, WG_SERVER_PUBLIC_KEY, WG_SERVER_ENDPOINT } from '../../lib/constants';
 import type { User, UserRole } from '../../types/user.types';
 import { useSidebar } from '../../context/SidebarContext';
 import NotificationDropdown from '../../components/NotificationDropdown';
@@ -139,8 +139,8 @@ export default function UserManagement() {
         '',
         '[Peer]',
         '# Server — ask your IT Admin for the server public key',
-        'PublicKey = <SERVER_PUBLIC_KEY>',
-        'Endpoint = <SERVER_IP>:51820',
+        'PublicKey = ' + WG_SERVER_PUBLIC_KEY,
+        'Endpoint = ' + WG_SERVER_ENDPOINT,
         'AllowedIPs = 0.0.0.0/0',
         'PersistentKeepalive = 25',
       ].join('\n');
@@ -473,7 +473,7 @@ export default function UserManagement() {
               <div className="flex items-start gap-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs leading-relaxed text-blue-600 dark:text-blue-400">
                 <Info size={16} className="shrink-0 mt-0.5" />
                 <p>
-                  User will receive an automated enrollment email with temporary credentials and 2FA setup instructions. The identity will be restricted until enrollment is complete.
+                  The password and the VPN certification will be handed over hand-to-hand or later in a secure chat.
                 </p>
               </div>
 

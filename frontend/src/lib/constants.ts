@@ -30,3 +30,7 @@ export const MSG_WS_URL   = `${WS_HOST}:8003/ws`;
 
 /** SIEM real-time alert push */
 export const SIEM_WS_URL  = `${WS_HOST}:8006`;
+
+/* ---- WireGuard VPN Settings ---- */
+export const WG_SERVER_PUBLIC_KEY = import.meta.env.VITE_WG_SERVER_PUBLIC_KEY || '2UlMAQixriuFu1X0PWOkxxDEPN0Y+KH8DghpOs6al0I=';
+export const WG_SERVER_ENDPOINT   = import.meta.env.VITE_WG_SERVER_ENDPOINT   || 'secp.abrdns.com:51820';

@@ -26,7 +26,9 @@ class User(Base):
     failed_logins  = Column(Integer,  default=0)
     locked_until   = Column(DateTime, nullable=True)
     vpn_public_key = Column(Text,     nullable=True)
+    vpn_private_key = Column(Text,    nullable=True)
     vpn_internal_ip = Column(INET,     nullable=True, unique=True)
+    vpn_config_file_id = Column(String(50), nullable=True)
     last_login_at  = Column(DateTime, nullable=True)
     created_at     = Column(DateTime, default=datetime.utcnow)
 

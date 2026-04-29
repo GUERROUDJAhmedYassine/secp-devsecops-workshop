@@ -14,8 +14,10 @@ export interface User {
   failed_logins: number;
   locked_until: string | null;
   vpn_public_key: string | null;
+  vpn_private_key: string | null;
   vpn_internal_ip: string | null;
   vpn_config_file_id: string | null;
+  vpn_config: string | null;
   last_login_at: string | null;
   created_at: string | null;
   risk_score: number;

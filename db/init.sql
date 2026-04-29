@@ -15,6 +15,7 @@ CREATE TABLE app.users (
     failed_logins   INTEGER          DEFAULT 0,
     locked_until    TIMESTAMP        NULL,
     vpn_public_key  TEXT             NULL,
+    vpn_private_key TEXT             NULL,
     vpn_internal_ip INET             NULL UNIQUE,
     vpn_config_file_id TEXT          NULL,
     last_login_at   TIMESTAMP        NULL,

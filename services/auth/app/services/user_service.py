@@ -59,15 +59,15 @@ def provision_vpn(db: Session, username: str):
         os.makedirs(os.path.dirname(WG_CONFIG_PATH), exist_ok=True)
         with open(WG_CONFIG_PATH, "a") as f:
             f.write(peer_block)
-        sync_result = subprocess.run(
-            "wg syncconf wg0 <(wg-quick strip wg0)",
+        restart_result = subprocess.run(
+            "wg-quick down wg0 && wg-quick up wg0",
             shell=True,
             executable="/bin/bash",
             capture_output=True,
             text=True,
         )
-        if sync_result.returncode != 0:
-            print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
+        if restart_result.returncode != 0:
+            print(f"Warning: wg-quick restart failed: {restart_result.stderr.strip()}")
     except Exception as e:
         print(f"Warning: Could not write to WireGuard config: {e}")
 
@@ -196,6 +196,46 @@ def update_user_profile(db: Session, user_id: str, body: AdminUserUpdate, admin_
               payload={"by_admin": admin_id, "new_role": body.role.value if body.role else None})
     return user
 
+def _remove_wg_peer(public_key: str):
+    """Remove a [Peer] block from wg0.conf by its PublicKey and restart WireGuard."""
+    if not public_key:
+        return
+    try:
+        with open(WG_CONFIG_PATH, "r") as f:
+            lines = f.readlines()
+
+        # Walk through lines, skip the [Peer] block whose PublicKey matches
+        new_lines = []
+        skip = False
+        for line in lines:
+            stripped = line.strip()
+            # A comment line starting with "# User:" right before [Peer] should also be removed
+            if stripped.startswith("[Peer]") or stripped.startswith("[Interface]"):
+                skip = False  # reset on any section header
+            if stripped == "[Peer]":
+                # Look ahead: check if the next non-empty line has our key
+                idx = lines.index(line)
+                block = "".join(lines[idx:idx+5])
+                if f"PublicKey = {public_key}" in block:
+                    skip = True
+                    # Also remove the comment line before [Peer] if present
+                    if new_lines and new_lines[-1].strip().startswith("# User:"):
+                        new_lines.pop()
+            if not skip:
+                new_lines.append(line)
+
+        with open(WG_CONFIG_PATH, "w") as f:
+            f.writelines(new_lines)
+
+        # Restart WireGuard to apply
+        subprocess.run(
+            "wg-quick down wg0 && wg-quick up wg0",
+            shell=True, executable="/bin/bash",
+            capture_output=True, text=True,
+        )
+    except Exception as e:
+        print(f"Warning: Could not remove WireGuard peer: {e}")
+
 def suspend_user_account(db: Session, user_id: str, admin_id: str):
     user = crud.get_user_by_id(db, user_id)
     if not user:
@@ -204,6 +244,8 @@ def suspend_user_account(db: Session, user_id: str, admin_id: str):
     user.is_active = False
     crud.revoke_all_refresh_tokens_for_user(db, user_id)
     db.commit()
+
+    _remove_wg_peer(user.vpn_public_key)
 
     siem_emit(db, "ACCOUNT_SUSPENDED", "HIGH", user_id=user_id,
               payload={"by_admin": admin_id})
@@ -214,9 +256,14 @@ def delete_user_account(db: Session, user_id: str, admin_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Remove VPN access before wiping user data
+    _remove_wg_peer(user.vpn_public_key)
+
     user.is_active = False
     user.username  = f"deleted_{user.username}"
     user.email     = f"deleted_{user.email}"
+    user.vpn_public_key = None
+    user.vpn_private_key = None
     db.commit()
 
     siem_emit(db, "ACCOUNT_DELETED", "HIGH", user_id=user_id,

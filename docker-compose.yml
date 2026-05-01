@@ -13,8 +13,7 @@ services:
 
   auth:
     build: ./services/auth
-    ports:
-      - "8001:8001"
+    network_mode: "host"
     cap_add:
       - NET_ADMIN
     environment:
@@ -33,8 +32,6 @@ services:
     depends_on:
       db-migrate:
         condition: service_completed_successfully
-    networks:
-      - backend
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 10s

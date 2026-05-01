@@ -1,10 +1,13 @@
 /* ------------------------------------------------------------------
  *  Service base URLs
- *  In production these should come from env vars; for local dev the
- *  backend services bind to localhost on the ports below.
+ *  Dynamically resolves to the hostname the user is currently visiting
+ *  (e.g. 10.0.0.1 or 10.8.0.1) to support both LAN and VPN access.
  * ------------------------------------------------------------------ */
 
-const API_HOST = import.meta.env.VITE_API_HOST ?? 'http://localhost';
+const CURRENT_HOST = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const CURRENT_PROTOCOL = typeof window !== 'undefined' ? window.location.protocol : 'http:';
+
+const API_HOST = import.meta.env.VITE_API_HOST || `${CURRENT_PROTOCOL}//${CURRENT_HOST}`;
 
 /** Auth service – JWT, bcrypt, account lockout */
 export const AUTH_BASE    = `${API_HOST}:8001`;
@@ -23,7 +26,8 @@ export const SIEM_BASE    = `${API_HOST}:8005`;
 
 /* ---- WebSocket endpoints ---- */
 
-const WS_HOST = import.meta.env.VITE_WS_HOST ?? 'ws://localhost';
+const WS_PROTOCOL = CURRENT_PROTOCOL === 'https:' ? 'wss:' : 'ws:';
+const WS_HOST = import.meta.env.VITE_WS_HOST || `${WS_PROTOCOL}//${CURRENT_HOST}`;
 
 /** Messaging WebSocket */
 export const MSG_WS_URL   = `${WS_HOST}:8003/ws`;

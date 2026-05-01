@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, Request,status  
+import os
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 from schemas import UserCreate, UserLogin, PasswordChange, TokenResponse, UserResponse, DirectoryUserResponse
 from dependencies import get_current_user, require_role
 from services import auth_service, user_service
+from config import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
 import crud
 import psutil
 import socket
@@ -12,6 +15,37 @@ import platform
 import time
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+ACCESS_COOKIE = "secp_access_token"
+REFRESH_COOKIE = "secp_refresh_token"
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "strict").lower()
+
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    response.set_cookie(
+        key=ACCESS_COOKIE,
+        value=access_token,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/",
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=refresh_token,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/",
+    )
+
+
+def clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    response.delete_cookie(REFRESH_COOKIE, path="/")
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(
@@ -24,6 +58,7 @@ def register(
     # Extract token for files-service upload
     auth_header = request.headers.get("Authorization")
     token = auth_header.split(" ")[1] if auth_header and " " in auth_header else None
+    token = token or request.cookies.get(ACCESS_COOKIE)
     
     user = user_service.register_user(db, body, admin_token=token)
     return UserResponse.build(user)
@@ -32,28 +67,39 @@ def register(
 def login(
     body: UserLogin,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     """Authenticate user and return JWT access + refresh tokens."""
     access_token, refresh_token = auth_service.authenticate_user(db, body, request.client.host)
+    set_auth_cookies(response, access_token, refresh_token)
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(
-    refresh_token: str,
+    request: Request,
+    response: Response,
+    refresh_token: str | None = Body(default=None, embed=True),
     db: Session = Depends(get_db),
 ):
     """Issue a new access token from a valid refresh token."""
+    refresh_token = refresh_token or request.cookies.get(REFRESH_COOKIE)
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
     new_access = auth_service.handle_refresh(db, refresh_token)
+    set_auth_cookies(response, new_access, refresh_token)
     return TokenResponse(access_token=new_access, refresh_token=refresh_token)
 
 @router.post("/logout")
 def logout(
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Revoke all refresh tokens for the current user."""
     auth_service.handle_logout(db, str(current_user.id))
+    clear_auth_cookies(response)
     return {"message": "Logged out successfully"}
 
 @router.get("/me", response_model=UserResponse)

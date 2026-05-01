@@ -17,7 +17,6 @@ import {
   Bell,
   FileText,
   Users,
-  Sliders,
   LogOut
 } from 'lucide-react';
 
@@ -44,7 +43,6 @@ export default function Sidebar() {
     { name: 'Alerts', path: '/admin/alerts', icon: Bell, badge: openAlertsCount > 0 ? openAlertsCount : null },
     { name: 'Event Log', path: '/admin/events', icon: FileText, badge: null },
     { name: 'Users', path: '/admin/users', icon: Users, badge: null },
-    { name: 'Baselines', path: '/admin/baselines', icon: Sliders, badge: null },
   ];
 
   return (

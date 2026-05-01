@@ -5,7 +5,7 @@
 
 import { AUTH_BASE } from '../lib/constants';
 import { apiGet, apiPost, apiPut } from '../lib/apiClient';
-import { setTokens, clearTokens } from '../lib/tokenManager';
+import { clearTokens } from '../lib/tokenManager';
 import type {
   User,
   AuthTokens,
@@ -18,18 +18,17 @@ import type { DirectoryUser } from '../types/user.types';
 // NOTE: messaging directory is intentionally minimal (no PII)
 
 /**
- * Authenticate a user. Returns tokens and stores them.
- * Uses form-urlencoded body for FastAPI OAuth2PasswordRequestForm.
+ * Authenticate a user. The API stores tokens in HttpOnly cookies.
  */
 export async function login(creds: LoginCredentials): Promise<AuthTokens> {
-  const formData = new URLSearchParams();
-  formData.append('username', creds.username);
-  formData.append('password', creds.password);
-
   const res = await fetch(`${AUTH_BASE}/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: formData.toString(),
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      username: creds.username,
+      password: creds.password,
+    }),
   });
 
   if (!res.ok) {
@@ -40,7 +39,6 @@ export async function login(creds: LoginCredentials): Promise<AuthTokens> {
   }
 
   const tokens: AuthTokens = await res.json();
-  setTokens(tokens);
   return tokens;
 }
 
@@ -58,14 +56,13 @@ export async function logout(): Promise<void> {
   }
 }
 
-/** Refresh access token using stored refresh token. */
-export async function refreshToken(refresh_token: string): Promise<AuthTokens> {
+/** Refresh access token using the HttpOnly refresh cookie. */
+export async function refreshToken(_refresh_token?: string): Promise<AuthTokens> {
   const tokens = await apiPost<AuthTokens>(
     `${AUTH_BASE}/auth/refresh`,
-    { refresh_token },
+    {},
     { skipAuth: true },
   );
-  setTokens(tokens);
   return tokens;
 }
 

@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from html import escape
 from pathlib import Path
 from typing import Iterable
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 import xml.etree.ElementTree as ET
+import re
 
 WORDPROCESSING_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": WORDPROCESSING_NS}
@@ -82,6 +84,16 @@ def _plain_text_to_html(text: str) -> str:
     return "".join(f"<p>{escape(line) or '&nbsp;'}</p>" for line in normalized.split("\n"))
 
 
+def _looks_like_html_fragment(text: str) -> bool:
+    return bool(
+        re.search(
+            r"</?(?:p|div|h[1-6]|table|tbody|thead|tfoot|tr|td|th|ul|ol|li|br|strong|b|em|i|u|span)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def _paragraph_text(element: ET.Element) -> str:
     parts: list[str] = []
     for node in element.iter():
@@ -99,6 +111,8 @@ def _paragraph_html(element: ET.Element) -> str:
     text = _paragraph_text(element)
     if not text.strip():
         return "<p>&nbsp;</p>"
+    if _looks_like_html_fragment(text):
+        return _normalize_html_fragment(text)
     safe_text = "<br />".join(escape(part) for part in text.splitlines())
     return f"<p>{safe_text}</p>"
 
@@ -150,12 +164,21 @@ def _local_tag(tag: str) -> str:
 
 
 def _normalize_html_fragment(html_content: str) -> str:
-    return (
+    normalized = (
         html_content
         .replace("<br>", "<br />")
         .replace("<br/>", "<br />")
         .replace("&nbsp;", "&#160;")
     )
+    normalized = re.sub(r"<colgroup\b[^>]*>.*?</colgroup>", "", normalized, flags=re.IGNORECASE | re.DOTALL)
+    normalized = re.sub(r"<col\b[^>]*>", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(
+        r"<(img|input|hr|meta|link)\b([^>]*)>",
+        lambda match: match.group(0) if match.group(2).rstrip().endswith("/") else f"<{match.group(1)}{match.group(2)} />",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    return normalized
 
 
 def _style_map(node: ET.Element) -> dict[str, str]:
@@ -175,6 +198,28 @@ def _extract_alignment(node: ET.Element) -> str:
         return "both" if align_attr == "justify" else align_attr
 
     style_align = _style_map(node).get("text-align", "")
+    if style_align in {"left", "center", "right", "justify"}:
+        return "both" if style_align == "justify" else style_align
+    return "left"
+
+
+def _style_map_from_attrs(attrs: dict[str, str]) -> dict[str, str]:
+    raw_style = attrs.get("style", "")
+    style_map: dict[str, str] = {}
+    for declaration in raw_style.split(";"):
+        if ":" not in declaration:
+            continue
+        key, value = declaration.split(":", 1)
+        style_map[key.strip().lower()] = value.strip().lower()
+    return style_map
+
+
+def _alignment_from_attrs(attrs: dict[str, str]) -> str:
+    align_attr = (attrs.get("align", "") or "").strip().lower()
+    if align_attr in {"left", "center", "right", "justify"}:
+        return "both" if align_attr == "justify" else align_attr
+
+    style_align = _style_map_from_attrs(attrs).get("text-align", "")
     if style_align in {"left", "center", "right", "justify"}:
         return "both" if style_align == "justify" else style_align
     return "left"
@@ -347,12 +392,171 @@ def _html_table_to_word_table(table_node: ET.Element) -> WordTable:
     return WordTable(rows=rows)
 
 
+class _ForgivingHtmlToDocxParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[WordParagraph | WordTable] = []
+        self._tag_stack: list[str] = []
+        self._current_runs: list[WordRun] | None = None
+        self._current_style = "Normal"
+        self._current_alignment = "left"
+        self._list_stack: list[bool] = []
+        self._ordered_index_stack: list[int] = []
+        self._table_rows: list[WordTableRow] | None = None
+        self._table_row_cells: list[WordTableCell] | None = None
+        self._cell_paragraphs: list[WordParagraph] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        attr_map = {key.lower(): value or "" for key, value in attrs}
+
+        if tag in {"colgroup", "col", "tbody", "thead", "tfoot"}:
+            return
+        if tag == "br":
+            self._ensure_paragraph()
+            self._append_text("\n")
+            return
+        if tag == "table":
+            self._end_paragraph()
+            if self._table_rows is None:
+                self._table_rows = []
+            return
+        if tag == "tr" and self._table_rows is not None:
+            self._end_paragraph()
+            self._table_row_cells = []
+            return
+        if tag in {"td", "th"} and self._table_row_cells is not None:
+            self._end_paragraph()
+            self._cell_paragraphs = []
+            return
+        if tag in {"ul", "ol"}:
+            self._list_stack.append(tag == "ol")
+            self._ordered_index_stack.append(1)
+            return
+        if tag in {"p", "div", "h1", "h2", "h3", "li"}:
+            self._end_paragraph()
+            style = f"Heading{tag[1]}" if tag in {"h1", "h2", "h3"} else "Normal"
+            self._begin_paragraph(style=style, alignment=_alignment_from_attrs(attr_map))
+            if tag == "li":
+                ordered = self._list_stack[-1] if self._list_stack else False
+                if ordered:
+                    index = self._ordered_index_stack[-1] if self._ordered_index_stack else 1
+                    self._append_text(f"{index}. ")
+                    if self._ordered_index_stack:
+                        self._ordered_index_stack[-1] = index + 1
+                else:
+                    self._append_text("* ")
+            return
+
+        self._tag_stack.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in {"p", "div", "h1", "h2", "h3", "li"}:
+            self._end_paragraph()
+            return
+        if tag in {"td", "th"} and self._table_row_cells is not None:
+            self._end_paragraph()
+            paragraphs = self._cell_paragraphs or [WordParagraph(runs=[WordRun(text="")])]
+            self._table_row_cells.append(WordTableCell(paragraphs=paragraphs))
+            self._cell_paragraphs = None
+            return
+        if tag == "tr" and self._table_rows is not None:
+            self._end_paragraph()
+            if self._table_row_cells:
+                self._table_rows.append(WordTableRow(cells=self._table_row_cells))
+            self._table_row_cells = None
+            return
+        if tag == "table" and self._table_rows is not None:
+            self._end_paragraph()
+            self.blocks.append(WordTable(rows=self._table_rows))
+            self._table_rows = None
+            self._table_row_cells = None
+            self._cell_paragraphs = None
+            return
+        if tag in {"ul", "ol"}:
+            if self._list_stack:
+                self._list_stack.pop()
+            if self._ordered_index_stack:
+                self._ordered_index_stack.pop()
+            return
+        if tag in self._tag_stack:
+            self._tag_stack.reverse()
+            self._tag_stack.remove(tag)
+            self._tag_stack.reverse()
+
+    def handle_data(self, data: str) -> None:
+        if not data:
+            return
+        self._ensure_paragraph()
+        self._append_text(data)
+
+    def close(self) -> None:
+        super().close()
+        self._end_paragraph()
+        if self._table_row_cells is not None:
+            if self._cell_paragraphs is not None:
+                self._table_row_cells.append(WordTableCell(paragraphs=self._cell_paragraphs or [WordParagraph(runs=[WordRun(text="")])]))
+            if self._table_rows is not None and self._table_row_cells:
+                self._table_rows.append(WordTableRow(cells=self._table_row_cells))
+        if self._table_rows is not None:
+            self.blocks.append(WordTable(rows=self._table_rows))
+
+    def _begin_paragraph(self, *, style: str = "Normal", alignment: str = "left") -> None:
+        self._current_runs = []
+        self._current_style = style
+        self._current_alignment = alignment
+
+    def _ensure_paragraph(self) -> None:
+        if self._current_runs is None:
+            self._begin_paragraph()
+
+    def _end_paragraph(self) -> None:
+        if self._current_runs is None:
+            return
+
+        runs = self._current_runs or [WordRun(text="")]
+        paragraph = WordParagraph(runs=runs, style=self._current_style, alignment=self._current_alignment)
+        if self._cell_paragraphs is not None:
+            self._cell_paragraphs.append(paragraph)
+        else:
+            self.blocks.append(paragraph)
+        self._current_runs = None
+        self._current_style = "Normal"
+        self._current_alignment = "left"
+
+    def _append_text(self, text: str) -> None:
+        if self._current_runs is None:
+            self._begin_paragraph()
+        active = set(self._tag_stack)
+        node_style: dict[str, str] = {}
+        self._current_runs.append(
+            WordRun(
+                text=text,
+                bold=bool(active.intersection({"strong", "b"})),
+                italic=bool(active.intersection({"em", "i"})),
+                underline=bool(active.intersection({"u", "ins"})),
+                strike=bool(active.intersection({"s", "strike", "del"})),
+            )
+        )
+
+
+def _parse_html_forgiving(html_content: str) -> list[WordParagraph | WordTable]:
+    parser = _ForgivingHtmlToDocxParser()
+    parser.feed(_normalize_html_fragment(html_content))
+    parser.close()
+    return parser.blocks
+
+
 def html_to_docx_blocks(html_content: str) -> list[WordParagraph | WordTable]:
     wrapped = f"<root>{_normalize_html_fragment(html_content)}</root>"
     try:
         root = ET.fromstring(wrapped)
     except ET.ParseError:
-        escaped = html_content.replace("\r\n", "\n")
+        blocks = _parse_html_forgiving(html_content)
+        if blocks:
+            return blocks
+        escaped = re.sub(r"<[^>]+>", "", html_content).replace("\r\n", "\n")
         return [WordParagraph(runs=[WordRun(text=line)]) for line in escaped.splitlines() or [""]]
 
     blocks: list[WordParagraph | WordTable] = []
@@ -502,3 +706,27 @@ def save_docx_from_html(path: Path, html_content: str) -> None:
         )
         archive.writestr("word/document.xml", document_xml)
         archive.writestr("word/styles.xml", _styles_xml())
+
+
+def docx_contains_raw_html_text(path: Path) -> bool:
+    try:
+        with ZipFile(path) as archive:
+            document_xml = archive.read("word/document.xml")
+    except (BadZipFile, KeyError, FileNotFoundError):
+        return False
+
+    try:
+        root = ET.fromstring(document_xml)
+    except ET.ParseError:
+        return False
+
+    return any(_looks_like_html_fragment(_paragraph_text(paragraph)) for paragraph in root.findall(".//w:p", NS))
+
+
+def repair_docx_if_raw_html(path: Path) -> bool:
+    if not docx_contains_raw_html_text(path):
+        return False
+
+    html_content = load_docx_preview(path)
+    save_docx_from_html(path, html_content)
+    return True

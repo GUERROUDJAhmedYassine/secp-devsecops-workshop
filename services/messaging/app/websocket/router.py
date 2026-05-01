@@ -1,21 +1,28 @@
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from security.jwt_handler import verify_token
 from websocket.manager import connect, disconnect
 from websocket.handler import handle_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["websocket"])
+ACCESS_COOKIE = "secp_access_token"
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
-    token: str = Query(...)
+    token: str | None = Query(default=None)
 ) -> None:
     """Main WebSocket entry point — validates JWT then handles messages."""
 
     # Step 1 — Validate token before accepting connection
+    token = token or websocket.cookies.get(ACCESS_COOKIE)
+    if not token:
+        await websocket.close(code=1008)
+        logger.warning(f"WebSocket rejected â€” missing token from {websocket.client.host}")
+        return
+
     payload = verify_token(token)
     if not payload:
         await websocket.close(code=1008)

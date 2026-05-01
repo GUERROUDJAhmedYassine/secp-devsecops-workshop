@@ -11,6 +11,7 @@ from typing import Any
 
 from app.config import now_utc
 from app.preview import is_docx_file, load_docx_preview, save_docx_from_html
+from app.versions import capture_file_version
 
 WORD_EXTENSIONS = {".txt", ".md", ".html", ".htm", ".docx"}
 WORD_MIME_TYPES = {
@@ -119,6 +120,7 @@ class CollaborationManager:
 
         path = Path(session.storage_path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        capture_file_version(session.file_id, path, path.name)
 
         if session.mode == "word":
             if is_docx_file(path.name, None):
@@ -324,7 +326,9 @@ class CollaborationManager:
                 next_content = html_content if extension in {".html", ".htm", ".docx"} else plain_text
                 if next_content != session.persisted_text_content:
                     session.is_dirty = True
+                session.text_content = next_content
                 session.persisted_text_content = next_content
+                session.yjs_updates.clear()
                 session.last_activity = now_utc()
                 return None
             else:

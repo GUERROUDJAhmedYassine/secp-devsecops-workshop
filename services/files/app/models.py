@@ -66,3 +66,15 @@ class FilePreviewResponse(BaseModel):
     filename: str
     mime_type: Optional[str] = None
     content: str
+
+
+class FileVersionRecord(BaseModel):
+    id: str
+    file_id: uuid.UUID
+    filename: str
+    file_size: int
+    created_at: datetime
+
+
+class FileVersionListResponse(BaseModel):
+    items: list[FileVersionRecord]

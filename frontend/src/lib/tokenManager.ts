@@ -1,42 +1,36 @@
 /* ------------------------------------------------------------------
  *  Token Manager
- *  Stores access / refresh tokens in localStorage, exposes helpers
- *  for silent refresh and logout cleanup.
+ *  Auth tokens are stored by the API in HttpOnly cookies. JavaScript
+ *  cannot read or write them; this module only coordinates refresh.
  * ------------------------------------------------------------------ */
 
 import { AUTH_BASE } from './constants';
 import type { AuthTokens } from '../types/user.types';
 
-const ACCESS_KEY = 'secp_access_token';
-const REFRESH_KEY = 'secp_refresh_token';
+const LEGACY_ACCESS_KEY = 'secp_access_token';
+const LEGACY_REFRESH_KEY = 'secp_refresh_token';
 
-/* ---- getters / setters ---- */
+function clearLegacyLocalStorage(): void {
+  localStorage.removeItem(LEGACY_ACCESS_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_KEY);
+}
 
 export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_KEY);
+  return null;
 }
 
 export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_KEY);
+  return null;
 }
 
-export function setTokens(tokens: AuthTokens): void {
-  // Store in localStorage for application logic
-  localStorage.setItem(ACCESS_KEY, tokens.access_token);
-  // Store in document.cookie so they show up in browser "Cookies" tab (client-side cookies)
-  document.cookie = `${ACCESS_KEY}=${tokens.access_token}; path=/; max-age=86400; SameSite=Strict`;
-  
-  if (tokens.refresh_token) {
-    localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
-    document.cookie = `${REFRESH_KEY}=${tokens.refresh_token}; path=/; max-age=604800; SameSite=Strict`;
-  }
+export function setTokens(_tokens: AuthTokens): void {
+  // Cookies are set by the auth service with HttpOnly.
+  clearLegacyLocalStorage();
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  document.cookie = `${ACCESS_KEY}=; path=/; max-age=0;`;
-  document.cookie = `${REFRESH_KEY}=; path=/; max-age=0;`;
+  // Cookies are cleared by /auth/logout. Nothing client-readable remains.
+  clearLegacyLocalStorage();
 }
 
 /* ---- silent refresh ---- */
@@ -44,22 +38,18 @@ export function clearTokens(): void {
 let refreshPromise: Promise<AuthTokens> | null = null;
 
 /**
- * Attempt to obtain a new access token using the stored refresh token.
+ * Attempt to obtain a new access token using the HttpOnly refresh cookie.
  * De-duplicates concurrent calls so only one network request fires.
  */
 export async function silentRefresh(): Promise<AuthTokens> {
   if (refreshPromise) return refreshPromise;
 
-  const refresh_token = getRefreshToken();
-  if (!refresh_token) {
-    return Promise.reject(new Error('No refresh token available'));
-  }
-
   refreshPromise = (async () => {
     const res = await fetch(`${AUTH_BASE}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token }),
+      credentials: 'include',
+      body: JSON.stringify({}),
     });
 
     if (!res.ok) {
@@ -68,7 +58,6 @@ export async function silentRefresh(): Promise<AuthTokens> {
     }
 
     const tokens: AuthTokens = await res.json();
-    setTokens(tokens);
     return tokens;
   })();
 

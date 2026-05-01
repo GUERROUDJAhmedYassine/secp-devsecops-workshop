@@ -15,6 +15,8 @@ services:
     build: ./services/auth
     ports:
       - "8001:8001"
+    cap_add:
+      - NET_ADMIN
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@10.0.0.2:5432/secp?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}

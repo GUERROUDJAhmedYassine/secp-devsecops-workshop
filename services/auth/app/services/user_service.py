@@ -59,15 +59,13 @@ def provision_vpn(db: Session, username: str):
         os.makedirs(os.path.dirname(WG_CONFIG_PATH), exist_ok=True)
         with open(WG_CONFIG_PATH, "a") as f:
             f.write(peer_block)
-        restart_result = subprocess.run(
-            "wg-quick down wg0 && wg-quick up wg0",
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
-            text=True,
+        # Add the peer live to the running wg0 interface (no connection drops)
+        add_result = subprocess.run(
+            ["wg", "set", "wg0", "peer", pub_b64, "allowed-ips", f"{next_ip}/32"],
+            capture_output=True, text=True,
         )
-        if restart_result.returncode != 0:
-            print(f"Warning: wg-quick restart failed: {restart_result.stderr.strip()}")
+        if add_result.returncode != 0:
+            print(f"Warning: wg set peer failed: {add_result.stderr.strip()}")
     except Exception as e:
         print(f"Warning: Could not write to WireGuard config: {e}")
 
@@ -227,10 +225,9 @@ def _remove_wg_peer(public_key: str):
         with open(WG_CONFIG_PATH, "w") as f:
             f.writelines(new_lines)
 
-        # Restart WireGuard to apply
+        # Remove the peer live from the running wg0 interface
         subprocess.run(
-            "wg-quick down wg0 && wg-quick up wg0",
-            shell=True, executable="/bin/bash",
+            ["wg", "set", "wg0", "peer", public_key, "remove"],
             capture_output=True, text=True,
         )
     except Exception as e:

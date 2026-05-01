@@ -173,14 +173,14 @@ export default function LiveMonitor() {
               <span className="text-[10px] uppercase tracking-wider text-muted font-bold">R1-R8 ACTIVE</span>
             </div>
             <div className="flex-1 p-4 space-y-3 overflow-y-auto max-h-[500px]">
-              <DetectionRule id="R1" title="Geo-Location Anomaly" desc="Logins outside registered zones" status="CRITICAL" />
-              <DetectionRule id="R2" title="Brute Force Mitigation" desc="Adaptive lockout protocol" status="HIGH" />
-              <DetectionRule id="R3" title="Lateral Movement Tracking" desc="Pre-hop detection" status="CRITICAL" />
-              <DetectionRule id="R4" title="Encrypted Payload Scan" desc="Entropy analysis on packet body" status="MEDIUM" />
-              <DetectionRule id="R5" title="Domain Seeding Check" desc="DGA detection algorithm" status="HIGH" />
-              <DetectionRule id="R6" title="Memory Overflow Shield" desc="Kernel space monitoring" status="DISABLED" />
-              <DetectionRule id="R7" title="Zero-Day Beaconing" desc="AI-driven traffic profiling" status="CRITICAL" />
-              <DetectionRule id="R8" title="Privilege Escalation Trap" desc="Honey-pot file access tracking" status="CRITICAL" />
+              <DetectionRule id="R1" title="Brute Force" desc="N failed logins in M minutes" status="HIGH" />
+              <DetectionRule id="R2" title="Mass Download" desc="N file downloads in M minutes" status="HIGH" />
+              <DetectionRule id="R3" title="Impossible Travel" desc="Login from distant IP within impossible time" status="CRITICAL" />
+              <DetectionRule id="R4" title="VPN Cert Reuse" desc="Same VPN public key used by multiple users" status="HIGH" />
+              <DetectionRule id="R5" title="Dormant Account" desc="Login from account inactive for N days" status="MEDIUM" />
+              <DetectionRule id="R6" title="Off-Hours Access" desc="Login outside business hours" status="MEDIUM" />
+              <DetectionRule id="R7" title="External Relay" desc="Attempt to send email outside allowed domains" status="HIGH" />
+              <DetectionRule id="R8" title="Behavioral Anomaly" desc="Activity deviating > N stddev from baseline" status="HIGH" />
             </div>
           </div>
 

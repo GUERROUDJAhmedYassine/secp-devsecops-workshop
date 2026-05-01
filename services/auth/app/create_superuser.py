@@ -26,8 +26,9 @@ def create_superuser():
 
             # VPN Provisioning
             try:
-                pub_key, internal_ip, vpn_config = provision_vpn(db, new_user.username)
+                pub_key, priv_key, internal_ip, vpn_config = provision_vpn(db, new_user.username)
                 new_user.vpn_public_key = pub_key
+                new_user.vpn_private_key = priv_key
                 new_user.vpn_internal_ip = internal_ip
                 db.commit()
 

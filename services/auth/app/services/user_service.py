@@ -57,18 +57,15 @@ def provision_vpn(db: Session, username: str):
         os.makedirs(os.path.dirname(WG_CONFIG_PATH), exist_ok=True)
         with open(WG_CONFIG_PATH, "a") as f:
             f.write(peer_block)
-        strip_result = subprocess.run(["wg-quick", "strip", "wg0"], capture_output=True, text=True)
-        if strip_result.returncode == 0:
-            sync_result = subprocess.run(
-                ["wg", "syncconf", "wg0", "/dev/stdin"],
-                input=strip_result.stdout,
-                capture_output=True,
-                text=True,
-            )
-            if sync_result.returncode != 0:
-                print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
-        else:
-            print(f"Warning: wg-quick strip failed: {strip_result.stderr.strip()}")
+        sync_result = subprocess.run(
+            "wg syncconf wg0 <(wg-quick strip wg0)",
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+            text=True,
+        )
+        if sync_result.returncode != 0:
+            print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
     except Exception as e:
         print(f"Warning: Could not write to WireGuard config: {e}")
 

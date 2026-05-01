@@ -9,8 +9,6 @@ import crud
 from security import hash_password, verify_password
 from schemas import UserCreate, PasswordChange, AdminUserUpdate
 from siem import siem_emit
-from cryptography.hazmat.primitives.asymmetric import x25519
-from cryptography.hazmat.primitives import serialization
 from config import (
     WG_SERVER_PUBLIC_KEY, 
     WG_SERVER_ENDPOINT, 
@@ -20,21 +18,25 @@ from config import (
 )
 
 def _generate_wg_keys():
-    """Programmatically generate a WireGuard key pair."""
-    private_key = x25519.X25519PrivateKey.generate()
-    public_key = private_key.public_key()
+    """Generate a WireGuard key pair using the wg CLI tool directly.
     
-    priv_b64 = base64.b64encode(private_key.private_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PrivateFormat.Raw,
-        encryption_algorithm=serialization.NoEncryption()
-    )).decode()
-    
-    pub_b64 = base64.b64encode(public_key.public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw
-    )).decode()
-    
+    Uses wg genkey + wg pubkey to guarantee the keys are 100% compatible
+    with WireGuard's Curve25519 implementation (avoids potential byte-format
+    mismatches with Python's cryptography library).
+    """
+    genkey = subprocess.run(
+        ["wg", "genkey"],
+        capture_output=True, text=True, check=True,
+    )
+    priv_b64 = genkey.stdout.strip()
+
+    pubkey = subprocess.run(
+        ["wg", "pubkey"],
+        input=priv_b64,
+        capture_output=True, text=True, check=True,
+    )
+    pub_b64 = pubkey.stdout.strip()
+
     return priv_b64, pub_b64
 
 def provision_vpn(db: Session, username: str):

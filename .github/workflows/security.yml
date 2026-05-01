@@ -1,0 +1,371 @@
+# .github/workflows/security.yml
+name: DevSecOps Security Pipeline
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Run full scan every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+  security-events: write   # Required for SARIF uploads to GitHub Security tab
+  actions: read
+
+jobs:
+
+  # ─────────────────────────────────────────────
+  # STEP 2 — SAST: Bandit (Python services)
+  # ─────────────────────────────────────────────
+  sast-bandit:
+    name: "SAST · Bandit (Python)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit
+        run: |
+          bandit -r ./services/auth \
+                    ./services/files \
+                    ./services/mail \
+                    ./services/messaging \
+                    ./services/siem \
+                 -f sarif -o bandit-results.sarif \
+                 --exit-zero
+        # --exit-zero prevents the step from failing the pipeline;
+        # findings are still uploaded and visible in the Security tab.
+
+      - name: Upload Bandit SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  # ─────────────────────────────────────────────
+  # STEP 2 — SAST: Semgrep (JS/TS or multi-lang)
+  # ─────────────────────────────────────────────
+  sast-semgrep:
+    name: "SAST · Semgrep (JS/TS)"
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          semgrep ci \
+            --config p/javascript \
+            --config p/typescript \
+            --config p/nodejs \
+            --config p/owasp-top-ten \
+            --sarif --output semgrep-results.sarif \
+            --error || true
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}   # optional – remove if not using Semgrep Cloud
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep
+
+  # ─────────────────────────────────────────────
+  # STEP 3 — SCA: OWASP Dependency-Check
+  # ─────────────────────────────────────────────
+  sca-dependency-check:
+    name: "SCA · OWASP Dependency-Check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: "secp-devsecops"
+          path: "."
+          format: "SARIF"
+          out: "dependency-check-report"
+          args: >
+            --enableRetired
+            --failOnCVSS 7
+            --suppression suppression.xml
+        continue-on-error: true   # Don't block pipeline; review findings manually
+
+      - name: Upload Dependency-Check SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: dependency-check-report/dependency-check-report.sarif
+          category: dependency-check
+
+  # ─────────────────────────────────────────────
+  # STEP 3 — SCA: Trivy (filesystem scan)
+  # ─────────────────────────────────────────────
+  sca-trivy-fs:
+    name: "SCA · Trivy (filesystem)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-fs-results.sarif"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          exit-code: "0"
+
+      - name: Upload Trivy FS SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-filesystem
+
+  # ─────────────────────────────────────────────
+  # STEP 4 — Secrets Detection: Gitleaks
+  # ─────────────────────────────────────────────
+  secrets-gitleaks:
+    name: "Secrets · Gitleaks"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Full git history required for Gitleaks
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}   # Only needed for org-level; omit for personal repos
+
+  # ─────────────────────────────────────────────
+  # STEP 4 — Secrets Detection: TruffleHog
+  # ─────────────────────────────────────────────
+  secrets-trufflehog:
+    name: "Secrets · TruffleHog"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  # ─────────────────────────────────────────────
+  # STEP 5 — Container Image Scanning: Trivy
+  # Must run AFTER Docker images are built
+  # ─────────────────────────────────────────────
+  container-scan:
+    name: "Container · Trivy Image Scan"
+    runs-on: ubuntu-latest
+    needs: []   # Add build job name here if you have one, e.g. needs: [build]
+    strategy:
+      matrix:
+        service:
+          - auth
+          - files
+          - mail
+          - messaging
+          - siem
+          - frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image — ${{ matrix.service }}
+        run: |
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            docker build -t secp/${{ matrix.service }}:${{ github.sha }} ./frontend
+          else
+            docker build -t secp/${{ matrix.service }}:${{ github.sha }} ./services/${{ matrix.service }}
+          fi
+
+      - name: Trivy image scan — ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "secp/${{ matrix.service }}:${{ github.sha }}"
+          format: "sarif"
+          output: "trivy-${{ matrix.service }}.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: Upload Trivy image SARIF — ${{ matrix.service }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+  # ─────────────────────────────────────────────
+  # STEP 5 — Container Scanning: Grype (second opinion)
+  # ─────────────────────────────────────────────
+  container-grype:
+    name: "Container · Grype (auth)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build auth image
+        run: docker build -t secp/auth:grype ./services/auth
+
+      - name: Run Grype
+        uses: anchore/scan-action@v3
+        id: grype-scan
+        with:
+          image: "secp/auth:grype"
+          fail-build: false
+          severity-cutoff: high
+          output-format: sarif
+
+      - name: Upload Grype SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.grype-scan.outputs.sarif }}
+          category: grype
+
+  # ─────────────────────────────────────────────
+  # STEP 7 — IaC Scanning: Checkov
+  # ─────────────────────────────────────────────
+  iac-checkov:
+    name: "IaC · Checkov (Dockerfile + Compose)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: dockerfile,docker_compose
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true   # Change to false to enforce hard gate
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+  # ─────────────────────────────────────────────
+  # STEP 7 — Dockerfile Linting: Hadolint
+  # ─────────────────────────────────────────────
+  iac-hadolint:
+    name: "IaC · Hadolint (Dockerfile linter)"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - auth
+          - files
+          - mail
+          - messaging
+          - siem
+          - frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Dockerfile — ${{ matrix.service }}
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.service == 'frontend' && 'frontend/Dockerfile' || format('services/{0}/Dockerfile', matrix.service) }}
+          format: sarif
+          output-file: hadolint-${{ matrix.service }}.sarif
+          no-fail: true
+
+      - name: Upload Hadolint SARIF — ${{ matrix.service }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: hadolint-${{ matrix.service }}.sarif
+          category: hadolint-${{ matrix.service }}
+
+  # ─────────────────────────────────────────────
+  # STEP 6 — DAST: OWASP ZAP Baseline Scan
+  # Runs LAST — requires a live application
+  # ─────────────────────────────────────────────
+  dast-zap:
+    name: "DAST · OWASP ZAP Baseline"
+    runs-on: ubuntu-latest
+    needs:
+      - sast-bandit
+      - sast-semgrep
+      - sca-trivy-fs
+      - container-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start application stack
+        run: |
+          echo "DB_PASS=dummy_pass" > .env
+          echo "JWT_SECRET=dummy_secret" >> .env
+          echo "WG_SERVER_PUBLIC_KEY=dummy" >> .env
+          echo "WG_SERVER_ENDPOINT=127.0.0.1" >> .env
+          echo "VITE_ADMIN_GATEWAY_PATH=/" >> .env
+          docker compose -f docker-compose-dev.yml up -d --build
+          echo "Waiting for services to be ready..."
+          sleep 45
+
+      - name: Health-check Frontend
+        run: |
+          curl --retry 10 --retry-delay 5 --retry-connrefused \
+               -f http://localhost:3000 || true
+
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: "http://localhost:3000"
+          rules_file_name: ".zap/rules.tsv"      # optional: suppress known false positives
+          cmd_options: "-a -j"                   # -a: ajax spider, -j: output JSON report
+          fail_action: warn                      # warn = don't fail the pipeline; set to fail for hard gate
+          artifact_name: "zap-baseline-report"
+          allow_issue_writing: false
+
+      - name: Stop application stack
+        if: always()
+        run: docker compose -f docker-compose-dev.yml down
+
+  # ─────────────────────────────────────────────
+  # STEP 9 — SBOM Generation: Syft
+  # ─────────────────────────────────────────────
+  sbom-syft:
+    name: "SBOM · Syft (CycloneDX)"
+    runs-on: ubuntu-latest
+    needs: [container-scan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Build auth for SBOM
+        run: docker build -t secp/auth:sbom ./services/auth
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: secp/auth:sbom
+          format: cyclonedx-json
+          output-file: sbom-auth.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-auth
+          path: sbom-auth.cdx.json

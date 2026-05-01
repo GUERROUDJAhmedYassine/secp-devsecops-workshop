@@ -41,12 +41,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /* Attempt to restore the session from the HttpOnly access cookie on mount */
   useEffect(() => {
-    apiGet<User>(`${AUTH_BASE}/auth/me`)
+    apiGet<User>(`${AUTH_BASE}/auth/me`, { skipAuth: true })
       .then((u) => setUser(u))
       .catch(() => {
         clearTokens();
       })
       .finally(() => setIsLoading(false));
+  }, []);
+
+  /* Listen for session expiry events fired by apiClient (avoids full-page reload) */
+  useEffect(() => {
+    const handler = () => {
+      clearTokens();
+      setUser(null);
+    };
+    window.addEventListener('auth:expired', handler);
+    return () => window.removeEventListener('auth:expired', handler);
   }, []);
 
   /* ---- login ---- */

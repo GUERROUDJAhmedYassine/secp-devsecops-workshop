@@ -17,7 +17,6 @@ import LiveMonitor from './pages/admin/LiveMonitor';
 import AlertFeed from './pages/admin/AlertFeed';
 import UserManagement from './pages/admin/UserManagement';
 import UserProfileForensics from './pages/admin/UserProfileForensics';
-import BaselineViewer from './pages/admin/BaselineViewer';
 import EventLog from './pages/admin/EventLog';
 
 function AuthenticatedLayout() {
@@ -40,7 +39,6 @@ function AuthenticatedLayout() {
           <Route path="/admin/events" element={<EventLog />} />
           <Route path="/admin/users" element={<UserManagement />} />
           <Route path="/admin/users/:id" element={<UserProfileForensics />} />
-          <Route path="/admin/baselines" element={<BaselineViewer />} />
         </Route>
       </Routes>
     </div>

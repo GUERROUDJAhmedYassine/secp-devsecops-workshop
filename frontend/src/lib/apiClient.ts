@@ -1,13 +1,13 @@
 /* ------------------------------------------------------------------
  *  Central API client
- *  A thin wrapper around fetch that auto-attaches the JWT Bearer
- *  header and retries once on 401 via silent token refresh.
+ *  A thin wrapper around fetch that sends HttpOnly auth cookies and
+ *  retries once on 401 via silent token refresh.
  * ------------------------------------------------------------------ */
 
-import { getAccessToken, silentRefresh, clearTokens } from './tokenManager';
+import { silentRefresh, clearTokens } from './tokenManager';
 
 export interface ApiRequestInit extends RequestInit {
-  /** When true the Authorization header is NOT attached. */
+  /** When true, 401 responses are not retried with silent refresh. */
   skipAuth?: boolean;
 }
 
@@ -22,25 +22,13 @@ async function sendRequest(
     headers.set('Content-Type', 'application/json');
   }
 
-  if (!skipAuth) {
-    const token = getAccessToken();
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
-  }
-
-  let res = await fetch(url, { ...rest, headers });
+  let res = await fetch(url, { ...rest, headers, credentials: 'include' });
 
   /* ---- auto-retry once on 401 ---- */
   if (res.status === 401 && !skipAuth) {
     try {
       await silentRefresh();
-      const retryHeaders = new Headers(headers);
-      const newToken = getAccessToken();
-      if (newToken) {
-        retryHeaders.set('Authorization', `Bearer ${newToken}`);
-      }
-      res = await fetch(url, { ...rest, headers: retryHeaders });
+      res = await fetch(url, { ...rest, headers, credentials: 'include' });
     } catch {
       clearTokens();
       window.location.href = '/';

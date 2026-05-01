@@ -7,7 +7,7 @@ using the shared JWT_SECRET (same claims: sub, role, exp, iat).
 import uuid
 
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,8 @@ from config import JWT_SECRET, JWT_ALGORITHM
 from database import get_db
 from models import User
 
-security = HTTPBearer()
+ACCESS_COOKIE = "secp_access_token"
+security = HTTPBearer(auto_error=False)
 
 
 def decode_token(token: str) -> dict:
@@ -32,7 +33,8 @@ def decode_token(token: str) -> dict:
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ) -> User:
     """
@@ -41,7 +43,11 @@ def get_current_user(
     - unknown user id → 401
     - suspended account (is_active false) → 403 Account suspended
     """
-    payload = decode_token(credentials.credentials)
+    token = credentials.credentials if credentials else request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing access token")
+
+    payload = decode_token(token)
     raw_sub = payload.get("sub")
     if not raw_sub:
         raise HTTPException(status_code=401, detail="Invalid token payload")

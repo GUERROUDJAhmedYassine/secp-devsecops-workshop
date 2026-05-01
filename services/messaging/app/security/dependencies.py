@@ -1,17 +1,26 @@
 # security/dependencies.py
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from security.jwt_handler import verify_token
 from core.database import get_pool
 
-security = HTTPBearer()
+ACCESS_COOKIE = "secp_access_token"
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """Validates the JWT and fetches the user record from the database using asyncpg."""
-    payload = verify_token(credentials.credentials)
+    token = credentials.credentials if credentials else request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing access token",
+        )
+
+    payload = verify_token(token)
 
     if payload is None:
         raise HTTPException(

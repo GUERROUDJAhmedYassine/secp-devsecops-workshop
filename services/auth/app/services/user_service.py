@@ -1,5 +1,6 @@
 import base64
 import os
+import subprocess
 import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -56,6 +57,15 @@ def provision_vpn(db: Session, username: str):
         os.makedirs(os.path.dirname(WG_CONFIG_PATH), exist_ok=True)
         with open(WG_CONFIG_PATH, "a") as f:
             f.write(peer_block)
+        sync_result = subprocess.run(
+            "wg syncconf wg0 <(wg-quick strip wg0)",
+            shell=True,
+            executable="/bin/bash",
+            capture_output=True,
+            text=True,
+        )
+        if sync_result.returncode != 0:
+            print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
     except Exception as e:
         print(f"Warning: Could not write to WireGuard config: {e}")
 
@@ -68,7 +78,7 @@ DNS = 1.1.1.1
 [Peer]
 PublicKey = {WG_SERVER_PUBLIC_KEY}
 Endpoint = {WG_SERVER_ENDPOINT}
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = 10.8.0.1/32
 PersistentKeepalive = 25
 """
     return pub_b64, priv_b64, next_ip, client_conf

@@ -1,18 +1,24 @@
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 from security import decode_access_token
 
-security = HTTPBearer()
+ACCESS_COOKIE = "secp_access_token"
+security = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
-    payload = decode_access_token(credentials.credentials)
+    token = credentials.credentials if credentials else request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing access token")
+
+    payload = decode_access_token(token)
     user_id = payload.get("sub")
 
     if not user_id:

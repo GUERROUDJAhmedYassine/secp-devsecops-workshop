@@ -5,11 +5,15 @@
 
 import { FILES_BASE } from '../lib/constants';
 import { apiGet, apiGetBlob, apiPost, apiDelete } from '../lib/apiClient';
-import type { SecureFile, UploadResponse, CollaborationSessionResponse, CollaborationStateResponse, FilePreviewResponse } from '../types/files.types';
+import type { SecureFile, UploadResponse, CollaborationSessionResponse, CollaborationStateResponse, FilePreviewResponse, FileVersionRecord } from '../types/files.types';
 
 /** Backend wraps the list in `{ items: [...] }`. */
 interface FileListResponse {
   items: SecureFile[];
+}
+
+interface FileVersionListResponse {
+  items: FileVersionRecord[];
 }
 
 export async function getFiles(bucket?: string): Promise<SecureFile[]> {
@@ -32,6 +36,27 @@ function fileNameFromDisposition(header: string | null): string | null {
 
 export async function downloadFile(fileId: string, fallbackName = 'download'): Promise<void> {
   const response = await apiGetBlob(`${FILES_BASE}/files/${fileId}`);
+  const blob = await response.blob();
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const fileName =
+    fileNameFromDisposition(response.headers.get('Content-Disposition')) ?? fallbackName;
+
+  link.href = downloadUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(downloadUrl);
+}
+
+export async function listFileVersions(fileId: string): Promise<FileVersionRecord[]> {
+  const res = await apiGet<FileVersionListResponse>(`${FILES_BASE}/files/${fileId}/versions`);
+  return res.items;
+}
+
+export async function downloadFileVersion(fileId: string, versionId: string, fallbackName = 'download'): Promise<void> {
+  const response = await apiGetBlob(`${FILES_BASE}/files/${fileId}/versions/${versionId}`);
   const blob = await response.blob();
   const downloadUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');

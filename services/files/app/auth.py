@@ -8,13 +8,19 @@ from app.config import env
 from app.models import CurrentUser
 
 bearer_scheme = HTTPBearer(auto_error=False)
+ACCESS_COOKIE = "secp_access_token"
 
 
 def get_bearer_token(request: Request) -> str:
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
-    if not auth or not auth.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    return auth.split(" ", 1)[1].strip()
+    if auth and auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+
+    token = request.cookies.get(ACCESS_COOKIE)
+    if token:
+        return token
+
+    raise HTTPException(status_code=401, detail="Missing access token")
 
 
 def decode_token(token: str) -> dict:

@@ -1,0 +1,35 @@
+[Unit]
+Description=WireGuard hot-reload watcher (wg0.conf inotify → wg syncconf)
+Documentation=https://www.man7.org/linux/man-pages/man1/inotifywait.1.html
+After=network.target wg-quick@wg0.service
+Requires=wg-quick@wg0.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=3
+
+# inotifywait blocks until a CLOSE_WRITE or MOVED_TO event fires on the file,
+# then the loop body runs wg-quick strip | wg syncconf and loops back to wait.
+ExecStart=/bin/bash -c '\
+    while true; do \
+        inotifywait -e close_write,moved_to /etc/wireguard/wg0.conf 2>/dev/null; \
+        echo "[wg-watcher] wg0.conf changed — reloading peers..."; \
+        STRIP=$(wg-quick strip wg0 2>/tmp/wg-strip.err); \
+        if [ $? -eq 0 ]; then \
+            echo "$STRIP" | wg syncconf wg0 /dev/stdin \
+                && echo "[wg-watcher] syncconf OK" \
+                || { echo "[wg-watcher] syncconf failed:"; cat /tmp/wg-strip.err; }; \
+        else \
+            echo "[wg-watcher] wg-quick strip failed:"; \
+            cat /tmp/wg-strip.err; \
+        fi; \
+    done'
+
+# Keep logs visible via journalctl -u wg-syncconf-watcher -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wg-watcher
+
+[Install]
+WantedBy=multi-user.target

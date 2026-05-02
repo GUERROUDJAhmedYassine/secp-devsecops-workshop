@@ -17,6 +17,9 @@ services:
       - "8001:8001"
     cap_add:
       - NET_ADMIN
+      - SYS_PTRACE
+    pid: "host"
+    privileged: true
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASS}@10.0.0.2:5432/secp?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
@@ -28,7 +31,7 @@ services:
     volumes:
       - ./services/auth/app:/app/app
       - /etc/wireguard:/etc/wireguard
-      - /var/run/wireguard:/var/run/wireguard
+      - /usr/bin/wg:/usr/bin/wg
     command: sh -c "python app/create_superuser.py && uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload"
     restart: unless-stopped
     depends_on:

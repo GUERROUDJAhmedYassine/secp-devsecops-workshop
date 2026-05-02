@@ -60,12 +60,12 @@ def provision_vpn(db: Session, username: str):
         with open(WG_CONFIG_PATH, "a") as f:
             f.write(peer_block)
         # Sync the updated conf to the live wg0 interface via the UAPI socket
-        sync_result = subprocess.run(
-            "wg syncconf wg0 <(wg-quick strip wg0)",
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True, text=True,
-        )
+        # Sync the updated conf to the live wg0 interface via the host PID namespace
+        sync_result = subprocess.run([
+            "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+            "wg", "syncconf", "wg0", "/dev/stdin"
+        ], input=subprocess.check_output(["wg-quick", "strip", "wg0"]),
+           capture_output=True, text=True)
         if sync_result.returncode != 0:
             print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
         else:
@@ -230,12 +230,12 @@ def _remove_wg_peer(public_key: str):
             f.writelines(new_lines)
 
         # Sync updated conf (without removed peer) to the live wg0 interface
-        subprocess.run(
-            "wg syncconf wg0 <(wg-quick strip wg0)",
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True, text=True,
-        )
+        # Sync updated conf (without removed peer) to the live wg0 interface
+        subprocess.run([
+            "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+            "wg", "syncconf", "wg0", "/dev/stdin"
+        ], input=subprocess.check_output(["wg-quick", "strip", "wg0"]),
+           capture_output=True, text=True)
     except Exception as e:
         print(f"Warning: Could not remove WireGuard peer: {e}")
 

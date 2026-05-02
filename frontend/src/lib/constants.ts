@@ -1,15 +1,8 @@
 /* ------------------------------------------------------------------
- *  Service base URLs
- *  Dynamically resolves to the hostname the user is currently visiting
- *  (e.g. 10.0.0.1 or 10.8.0.1) to support both LAN and VPN access.
+ *  Service base URLs — dynamically resolved from the browser's
+ *  current host so the app works from any IP (LAN or VPN).
  * ------------------------------------------------------------------ */
 
-const CURRENT_HOST = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-const CURRENT_PROTOCOL = typeof window !== 'undefined' ? window.location.protocol : 'http:';
-
-const API_HOST = import.meta.env.VITE_API_HOST || `${CURRENT_PROTOCOL}//${CURRENT_HOST}`;
-
-/** Auth service – JWT, bcrypt, account lockout */
 const _host     = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 const _protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
 const _BASE     = `${_protocol}//${_host}`;

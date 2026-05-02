@@ -304,17 +304,17 @@ jobs:
           curl --retry 10 --retry-delay 5 --retry-connrefused \
                -f http://localhost:3000 || true
 
-      - name: Prepare ZAP workspace
-        run: sudo chmod -R 777 .
-
       - name: OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:3000 -J zap_report.json -w zap_report.md -r zap_report.html || true
+
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
         with:
-          target: "http://localhost:3000"
-          cmd_options: "-a -j"
-          fail_action: false
-          artifact_name: "zap_report"
-          allow_issue_writing: false
+          name: zap-report
+          path: zap_report.*
 
       - name: Stop application stack
         if: always()

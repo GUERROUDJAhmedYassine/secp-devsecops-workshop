@@ -3,7 +3,9 @@ import { getCollaborationState } from '../api/files';
 import { WsManager } from '../lib/websocket';
 import type { CollabWsPayload, CollaborationSessionResponse, CollaborationStateResponse } from '../types/files.types';
 
-const WS_HOST = import.meta.env.VITE_WS_HOST ?? 'ws://localhost';
+const CURRENT_HOST = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const CURRENT_PROTOCOL = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_HOST = `${CURRENT_PROTOCOL}//${CURRENT_HOST}`;
 
 function htmlToPlainText(html: string): string {
   return html
@@ -40,7 +42,7 @@ export function useCollaboration(
       return;
     }
 
-    const { file_id, session_id, websocket_path } = sessionInfo;
+    const { file_id, session_id } = sessionInfo;
 
     // Fetch initial state first just to be sure we have the latest
     getCollaborationState(file_id, session_id)
@@ -54,15 +56,15 @@ export function useCollaboration(
         setError(`Failed to fetch document state: ${err.message}`);
       });
 
-    // Build the correct WS URL
-    const wsUrl = `${WS_HOST}:8004${websocket_path}`;
+    // Build the correct WS URL for the Files service (port 8004)
+    const wsUrl = `${WS_HOST}:8004/files/${file_id}/collaborate/ws/${session_id}`;
 
     const ws = new WsManager({
       url: wsUrl,
       onMessage: (msg: unknown) => {
         if (!isMounted.current) return;
         const payload = msg as CollabWsPayload;
-        
+
         switch (payload.type) {
           case 'snapshot':
             setError(null);
@@ -77,7 +79,7 @@ export function useCollaboration(
               participants: payload.participants,
             });
             break;
-            
+
           case 'editor_update':
             // Handle Y.js generic update payload without touching local component state
             if (payload.operation.type === 'yjs_update') {
@@ -93,9 +95,9 @@ export function useCollaboration(
             // Merge legacy operations into the state
             setState((prev) => {
               if (!prev || prev.session_id !== payload.session_id) return prev;
-              
+
               const newState = { ...prev, revision: payload.revision, participants: payload.participants };
-              
+
               if (payload.operation.type === 'replace_text' && newState.mode === 'word') {
                 newState.text_content = payload.operation.content;
               } else if (payload.operation.type === 'replace_sheet' && newState.mode === 'excel') {
@@ -106,11 +108,11 @@ export function useCollaboration(
                   [payload.operation.cell]: payload.operation.value,
                 };
               }
-              
+
               return newState;
             });
             break;
-            
+
           case 'presence_joined':
           case 'presence_left':
             setState((prev) => {

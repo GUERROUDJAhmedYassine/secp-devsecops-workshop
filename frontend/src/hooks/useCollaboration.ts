@@ -56,8 +56,8 @@ export function useCollaboration(
         setError(`Failed to fetch document state: ${err.message}`);
       });
 
-    // Build the correct WS URL through Nginx proxy
-    const wsUrl = `${WS_HOST}:${typeof window !== 'undefined' && window.location.port ? window.location.port : '3000'}/api/files-ws/${file_id}/collaborate/ws/${session_id}`;
+    // Build the correct WS URL for the Files service (port 8004)
+    const wsUrl = `${WS_HOST}:8004/files/${file_id}/collaborate/ws/${session_id}`;
 
     const ws = new WsManager({
       url: wsUrl,

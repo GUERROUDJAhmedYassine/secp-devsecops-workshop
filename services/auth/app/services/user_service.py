@@ -59,13 +59,17 @@ def provision_vpn(db: Session, username: str):
         os.makedirs(os.path.dirname(WG_CONFIG_PATH), exist_ok=True)
         with open(WG_CONFIG_PATH, "a") as f:
             f.write(peer_block)
-        # Add the peer live to the running wg0 interface (no connection drops)
-        add_result = subprocess.run(
-            ["wg", "set", "wg0", "peer", pub_b64, "allowed-ips", f"{next_ip}/32"],
+        # Sync the updated conf to the live wg0 interface via the UAPI socket
+        sync_result = subprocess.run(
+            "wg syncconf wg0 <(wg-quick strip wg0)",
+            shell=True,
+            executable="/bin/bash",
             capture_output=True, text=True,
         )
-        if add_result.returncode != 0:
-            print(f"Warning: wg set peer failed: {add_result.stderr.strip()}")
+        if sync_result.returncode != 0:
+            print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
+        else:
+            print(f"WireGuard peer {pub_b64} synced to live interface")
     except Exception as e:
         print(f"Warning: Could not write to WireGuard config: {e}")
 
@@ -225,9 +229,11 @@ def _remove_wg_peer(public_key: str):
         with open(WG_CONFIG_PATH, "w") as f:
             f.writelines(new_lines)
 
-        # Remove the peer live from the running wg0 interface
+        # Sync updated conf (without removed peer) to the live wg0 interface
         subprocess.run(
-            ["wg", "set", "wg0", "peer", public_key, "remove"],
+            "wg syncconf wg0 <(wg-quick strip wg0)",
+            shell=True,
+            executable="/bin/bash",
             capture_output=True, text=True,
         )
     except Exception as e:

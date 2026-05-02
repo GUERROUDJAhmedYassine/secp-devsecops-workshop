@@ -58,28 +58,25 @@ jobs:
   sast-semgrep:
     name: "SAST · Semgrep (JS/TS)"
     runs-on: ubuntu-latest
-    container:
-      image: returntocorp/semgrep:latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Run Semgrep
-        run: |
-          semgrep ci \
-            --config p/javascript \
-            --config p/typescript \
-            --config p/nodejs \
-            --config p/owasp-top-ten \
-            --sarif --output semgrep-results.sarif \
-            --error || true
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}   # optional – remove if not using Semgrep Cloud
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/javascript
+            p/typescript
+            p/nodejs
+            p/owasp-top-ten
+          generateSarif: "1"
 
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep-results.sarif
+          sarif_file: semgrep.sarif
           category: semgrep
+        if: always()
 
   # ─────────────────────────────────────────────
   # STEP 3 — SCA: OWASP Dependency-Check

@@ -42,7 +42,7 @@ export function useCollaboration(
       return;
     }
 
-    const { file_id, session_id, websocket_path } = sessionInfo;
+    const { file_id, session_id } = sessionInfo;
 
     // Fetch initial state first just to be sure we have the latest
     getCollaborationState(file_id, session_id)

@@ -65,7 +65,7 @@ def provision_vpn(db: Session, username: str):
             "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
             "wg", "syncconf", "wg0", "/dev/stdin"
         ], input=subprocess.check_output(["wg-quick", "strip", "wg0"]),
-           capture_output=True, text=True)
+           capture_output=True)
         if sync_result.returncode != 0:
             print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
         else:
@@ -235,7 +235,7 @@ def _remove_wg_peer(public_key: str):
             "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
             "wg", "syncconf", "wg0", "/dev/stdin"
         ], input=subprocess.check_output(["wg-quick", "strip", "wg0"]),
-           capture_output=True, text=True)
+           capture_output=True)
     except Exception as e:
         print(f"Warning: Could not remove WireGuard peer: {e}")
 

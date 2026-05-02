@@ -103,10 +103,10 @@ def can_read_record(
     bucket = rec["bucket"]
     owner_id = rec["owner_id"]
 
-    if user.role == "IT_ADMIN":
-        return True
     if bucket == "personal":
         return str(user.id) == str(owner_id)
+    if user.role == "IT_ADMIN":
+        return True
     if bucket == "shared":
         return True
     if bucket.startswith("team/"):
@@ -130,12 +130,12 @@ def can_delete_record(
     bucket = rec["bucket"]
     owner_id = rec["owner_id"]
 
+    if bucket == "personal":
+        return str(user.id) == str(owner_id)
     if user.role == "IT_ADMIN":
         return True
     if bucket == "shared":
         return False
-    if bucket == "personal":
-        return str(user.id) == str(owner_id)
     if bucket.startswith("team/"):
         dept = bucket.split("/", 1)[1]
         if dept == "management":

@@ -141,8 +141,8 @@ services:
     build: ./frontend
     ports:
       - "3000:3000"
-    environment:
-      - VITE_ADMIN_GATEWAY_PATH=${VITE_ADMIN_GATEWAY_PATH}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     depends_on:
       auth:

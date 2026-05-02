@@ -3,7 +3,9 @@ import { getCollaborationState } from '../api/files';
 import { WsManager } from '../lib/websocket';
 import type { CollabWsPayload, CollaborationSessionResponse, CollaborationStateResponse } from '../types/files.types';
 
-const WS_HOST = import.meta.env.VITE_WS_HOST ?? 'ws://localhost';
+const CURRENT_HOST = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const CURRENT_PROTOCOL = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_HOST = `${CURRENT_PROTOCOL}//${CURRENT_HOST}`;
 
 function htmlToPlainText(html: string): string {
   return html

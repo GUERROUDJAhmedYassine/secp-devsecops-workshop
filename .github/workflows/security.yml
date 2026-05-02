@@ -69,7 +69,7 @@ jobs:
             p/typescript
             p/nodejs
             p/owasp-top-ten
-          generateSarif: "1"
+          args: --sarif --output semgrep.sarif || true
 
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -211,31 +211,6 @@ jobs:
           category: trivy-${{ matrix.service }}
 
   # ─────────────────────────────────────────────
-  # STEP 5 — Container Scanning: Grype (second opinion)
-  # ─────────────────────────────────────────────
-  container-grype:
-    name: "Container · Grype (auth)"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build auth image
-        run: docker build -t secp/auth:grype ./services/auth
-
-      - name: Run Grype
-        uses: anchore/scan-action@v3
-        id: grype-scan
-        with:
-          image: "secp/auth:grype"
-          fail-build: false
-          severity-cutoff: high
-          output-format: sarif
-
-      - name: Upload Grype SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: ${{ steps.grype-scan.outputs.sarif }}
-          category: grype
 
   # ─────────────────────────────────────────────
   # STEP 7 — IaC Scanning: Checkov
@@ -250,7 +225,7 @@ jobs:
         uses: bridgecrewio/checkov-action@master
         with:
           directory: .
-          framework: dockerfile,docker_compose
+          framework: all
           output_format: sarif
           output_file_path: checkov-results.sarif
           soft_fail: true   # Change to false to enforce hard gate

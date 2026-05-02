@@ -56,15 +56,15 @@ export function useCollaboration(
         setError(`Failed to fetch document state: ${err.message}`);
       });
 
-    // Build the correct WS URL
-    const wsUrl = `${WS_HOST}:8004${websocket_path}`;
+    // Build the correct WS URL through Nginx proxy
+    const wsUrl = `${WS_HOST}:${typeof window !== 'undefined' && window.location.port ? window.location.port : '3000'}/api/files-ws/${file_id}/collaborate/ws/${session_id}`;
 
     const ws = new WsManager({
       url: wsUrl,
       onMessage: (msg: unknown) => {
         if (!isMounted.current) return;
         const payload = msg as CollabWsPayload;
-        
+
         switch (payload.type) {
           case 'snapshot':
             setError(null);
@@ -79,7 +79,7 @@ export function useCollaboration(
               participants: payload.participants,
             });
             break;
-            
+
           case 'editor_update':
             // Handle Y.js generic update payload without touching local component state
             if (payload.operation.type === 'yjs_update') {
@@ -95,9 +95,9 @@ export function useCollaboration(
             // Merge legacy operations into the state
             setState((prev) => {
               if (!prev || prev.session_id !== payload.session_id) return prev;
-              
+
               const newState = { ...prev, revision: payload.revision, participants: payload.participants };
-              
+
               if (payload.operation.type === 'replace_text' && newState.mode === 'word') {
                 newState.text_content = payload.operation.content;
               } else if (payload.operation.type === 'replace_sheet' && newState.mode === 'excel') {
@@ -108,11 +108,11 @@ export function useCollaboration(
                   [payload.operation.cell]: payload.operation.value,
                 };
               }
-              
+
               return newState;
             });
             break;
-            
+
           case 'presence_joined':
           case 'presence_left':
             setState((prev) => {

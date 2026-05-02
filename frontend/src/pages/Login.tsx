@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useThemeContext } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
@@ -16,7 +16,14 @@ import {
 export default function Login() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useThemeContext();
-  const { login, logout, error, clearError, isLoading } = useAuth();
+  const { login, logout, error, clearError, isLoading, isAuthenticated } = useAuth();
+
+  /* Redirect already-authenticated users away from the login page */
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, isLoading, navigate]);
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');

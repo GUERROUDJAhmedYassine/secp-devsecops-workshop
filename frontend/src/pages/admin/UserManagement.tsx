@@ -152,7 +152,7 @@ export default function UserManagement() {
         '# Server — ask your IT Admin for the server public key',
         'PublicKey = ' + WG_SERVER_PUBLIC_KEY,
         'Endpoint = ' + WG_SERVER_ENDPOINT,
-        'AllowedIPs = 0.0.0.0/0',
+        'AllowedIPs = 10.8.0.1/32',
         'PersistentKeepalive = 25',
       ].join('\n');
 

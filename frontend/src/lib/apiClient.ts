@@ -31,7 +31,9 @@ async function sendRequest(
       res = await fetch(url, { ...rest, headers, credentials: 'include' });
     } catch {
       clearTokens();
-      window.location.href = '/';
+      // Dispatch a custom event so the React Router can redirect
+      // without a full page reload (which was causing the infinite loop).
+      window.dispatchEvent(new CustomEvent('auth:expired'));
       throw new Error('Session expired');
     }
   }

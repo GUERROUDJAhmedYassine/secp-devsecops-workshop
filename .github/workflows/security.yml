@@ -83,6 +83,13 @@ jobs:
           sarif_file: bandit-results.sarif
           category: bandit
 
+      - name: Save Bandit results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-bandit
+          path: bandit-results.sarif
+
   # ─────────────────────────────────────────────
   # STEP 2 — SAST: Semgrep (JS/TS + multi-lang)
   # Multi-language SAST with OWASP Top 10 rules.
@@ -119,6 +126,13 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
 
+      - name: Save Semgrep results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-semgrep
+          path: semgrep.sarif
+
   # ─────────────────────────────────────────────
   # STEP 3 — SCA: OWASP Dependency-Check
   # Identifies known CVEs in third-party deps.
@@ -149,6 +163,13 @@ jobs:
           sarif_file: dependency-check-report/dependency-check-report.sarif
           category: dependency-check
 
+      - name: Save Dependency-Check results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-dependency-check
+          path: dependency-check-report/dependency-check-report.sarif
+
   # ─────────────────────────────────────────────
   # STEP 3 — SCA: Trivy (filesystem scan)
   # Fast, accurate SCA across all ecosystems.
@@ -175,6 +196,13 @@ jobs:
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-filesystem
+
+      - name: Save Trivy FS results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-trivy-fs
+          path: trivy-fs-results.sarif
 
   # ─────────────────────────────────────────────
   # STEP 4 — Secrets Detection: Gitleaks
@@ -240,6 +268,13 @@ jobs:
           sarif_file: checkov-results.sarif
           category: checkov
 
+      - name: Save Checkov results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-checkov
+          path: checkov-results.sarif
+
   # ─────────────────────────────────────────────
   # STEP 7 — Dockerfile Linting: Hadolint
   # Best-practice linting for Dockerfiles.
@@ -273,6 +308,13 @@ jobs:
         with:
           sarif_file: hadolint-${{ matrix.service }}.sarif
           category: hadolint-${{ matrix.service }}
+
+      - name: Save Hadolint results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-hadolint-${{ matrix.service }}
+          path: hadolint-${{ matrix.service }}.sarif
 
   # ─────────────────────────────────────────────
   # STEP 5 — Container Image Scanning: Trivy
@@ -327,6 +369,13 @@ jobs:
         with:
           sarif_file: trivy-${{ matrix.service }}.sarif
           category: trivy-${{ matrix.service }}
+
+      - name: Save Trivy image results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-trivy-image-${{ matrix.service }}
+          path: trivy-${{ matrix.service }}.sarif
 
 
 
@@ -473,12 +522,12 @@ jobs:
           path: sbom-${{ matrix.service }}.cdx.json
 
   # ─────────────────────────────────────────────
-  # STEP 10 — Pipeline Summary
-  # Final job that runs after everything else.
-  # Provides a single pass/fail gate.
+  # STEP 10 — Security Findings Report (D4)
+  # Downloads all SARIF artifacts, parses them,
+  # and generates a Markdown findings table.
   # ─────────────────────────────────────────────
-  pipeline-summary:
-    name: "📊 Pipeline Summary"
+  security-report:
+    name: "📊 Security Findings Report"
     runs-on: ubuntu-latest
     if: always()
     needs:
@@ -494,7 +543,217 @@ jobs:
       - dast-zap
       - sbom-syft
     steps:
-      - name: Security Pipeline Summary
+      - name: Download all SARIF artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sarif-*
+          path: sarif-results
+          merge-multiple: false
+
+      - name: Download ZAP reports
+        uses: actions/download-artifact@v4
+        with:
+          name: zap-reports
+          path: zap-results
+        continue-on-error: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate Security Findings Report
+        run: |
+          cat > generate_report.py << 'PYTHON_SCRIPT'
+          import json, os, glob, datetime
+
+          report_lines = []
+          def add(line=""):
+              report_lines.append(line)
+
+          add("# 🔒 DevSecOps Security Findings Report")
+          add(f"")
+          add(f"**Generated:** {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+          add(f"**Repository:** SECP SIEM Platform")
+          add(f"**Pipeline Run:** [GitHub Actions](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})")
+          add()
+          add("---")
+          add()
+
+          # Pipeline status
+          add("## 1. Pipeline Execution Summary")
+          add()
+          add("| Stage | Tool | Status |")
+          add("|-------|------|--------|")
+          statuses = {
+              "SAST": [("Bandit (Python)", "${{ needs.sast-bandit.result }}"), ("Semgrep (Multi-lang)", "${{ needs.sast-semgrep.result }}")],
+              "SCA": [("OWASP Dep-Check", "${{ needs.sca-dependency-check.result }}"), ("Trivy FS", "${{ needs.sca-trivy-fs.result }}")],
+              "Secrets": [("Gitleaks", "${{ needs.secrets-gitleaks.result }}"), ("TruffleHog", "${{ needs.secrets-trufflehog.result }}")],
+              "IaC": [("Checkov", "${{ needs.iac-checkov.result }}"), ("Hadolint", "${{ needs.iac-hadolint.result }}")],
+              "Container": [("Trivy Image", "${{ needs.container-trivy.result }}")],
+              "DAST": [("OWASP ZAP", "${{ needs.dast-zap.result }}")],
+              "SBOM": [("Syft", "${{ needs.sbom-syft.result }}")],
+          }
+          for stage, tools in statuses.items():
+              for tool_name, result in tools:
+                  icon = "✅" if result == "success" else "⚠️" if result == "failure" else "⏭️"
+                  add(f"| {stage} | {tool_name} | {icon} {result} |")
+          add()
+
+          # Parse SARIF files
+          def parse_sarif(filepath):
+              findings = []
+              try:
+                  with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                      data = json.load(f)
+                  for run in data.get('runs', []):
+                      tool_name = run.get('tool', {}).get('driver', {}).get('name', 'Unknown')
+                      rules = {r['id']: r for r in run.get('tool', {}).get('driver', {}).get('rules', [])}
+                      for result in run.get('results', []):
+                          rule_id = result.get('ruleId', 'N/A')
+                          level = result.get('level', 'warning')
+                          message = result.get('message', {}).get('text', 'No description')
+                          # Truncate long messages
+                          if len(message) > 120:
+                              message = message[:117] + '...'
+                          location = 'N/A'
+                          line_num = ''
+                          locs = result.get('locations', [])
+                          if locs:
+                              phys = locs[0].get('physicalLocation', {})
+                              uri = phys.get('artifactLocation', {}).get('uri', '')
+                              region = phys.get('region', {})
+                              start_line = region.get('startLine', '')
+                              if uri:
+                                  location = uri
+                                  if start_line:
+                                      line_num = str(start_line)
+                          severity = level.upper()
+                          if severity == 'ERROR':
+                              severity = 'HIGH'
+                          elif severity == 'WARNING':
+                              severity = 'MEDIUM'
+                          elif severity == 'NOTE':
+                              severity = 'LOW'
+                          findings.append({
+                              'tool': tool_name,
+                              'rule': rule_id,
+                              'severity': severity,
+                              'file': location,
+                              'line': line_num,
+                              'message': message,
+                          })
+              except Exception as e:
+                  print(f"Warning: Could not parse {filepath}: {e}")
+              return findings
+
+          # Collect all SARIF findings
+          all_findings = {}
+          categories = {
+              'bandit': 'SAST (Bandit)',
+              'semgrep': 'SAST (Semgrep)',
+              'dependency-check': 'SCA (Dependency-Check)',
+              'trivy-fs': 'SCA (Trivy FS)',
+              'checkov': 'IaC (Checkov)',
+              'hadolint': 'IaC (Hadolint)',
+              'trivy-image': 'Container (Trivy)',
+          }
+
+          sarif_dir = 'sarif-results'
+          if os.path.exists(sarif_dir):
+              for sarif_file in sorted(glob.glob(os.path.join(sarif_dir, '**', '*.sarif'), recursive=True)):
+                  # Determine category from path
+                  rel_path = os.path.relpath(sarif_file, sarif_dir)
+                  cat_key = 'unknown'
+                  for key in categories:
+                      if key in rel_path.lower():
+                          cat_key = key
+                          break
+                  cat_name = categories.get(cat_key, f'Other ({cat_key})')
+                  findings = parse_sarif(sarif_file)
+                  if cat_name not in all_findings:
+                      all_findings[cat_name] = []
+                  all_findings[cat_name].extend(findings)
+
+          # Summary statistics
+          add("## 2. Findings Overview")
+          add()
+          total = sum(len(f) for f in all_findings.values())
+          add(f"**Total findings across all tools: {total}**")
+          add()
+          add("| Category | Total | High/Critical | Medium | Low |")
+          add("|----------|-------|---------------|--------|-----|")
+          for cat_name in ['SAST (Bandit)', 'SAST (Semgrep)', 'SCA (Dependency-Check)', 'SCA (Trivy FS)', 'IaC (Checkov)', 'IaC (Hadolint)', 'Container (Trivy)']:
+              findings = all_findings.get(cat_name, [])
+              high = len([f for f in findings if f['severity'] in ('HIGH', 'CRITICAL', 'ERROR')])
+              med = len([f for f in findings if f['severity'] in ('MEDIUM', 'WARNING')])
+              low = len([f for f in findings if f['severity'] in ('LOW', 'NOTE', 'INFO')])
+              add(f"| {cat_name} | {len(findings)} | {high} | {med} | {low} |")
+          add()
+
+          # Detailed tables per category
+          add("---")
+          add()
+          add("## 3. Detailed Findings by Category")
+          add()
+
+          section_num = 1
+          for cat_name in ['SAST (Bandit)', 'SAST (Semgrep)', 'SCA (Dependency-Check)', 'SCA (Trivy FS)', 'IaC (Checkov)', 'IaC (Hadolint)', 'Container (Trivy)']:
+              findings = all_findings.get(cat_name, [])
+              add(f"### 3.{section_num} {cat_name}")
+              add()
+              if not findings:
+                  add("_No findings detected._")
+              else:
+                  add(f"**{len(findings)} finding(s)**")
+                  add()
+                  add("| # | Severity | Rule ID | File | Line | Description |")
+                  add("|---|----------|---------|------|------|-------------|")
+                  for i, f in enumerate(findings[:50], 1):  # Cap at 50 per category
+                      # Escape pipe chars in message
+                      msg = f['message'].replace('|', '\\|')
+                      add(f"| {i} | {f['severity']} | {f['rule']} | {f['file']} | {f['line']} | {msg} |")
+                  if len(findings) > 50:
+                      add(f"| ... | ... | ... | ... | ... | _+{len(findings)-50} more findings (see SARIF artifacts)_ |")
+              add()
+              section_num += 1
+
+          # DAST section from ZAP markdown reports
+          add(f"### 3.{section_num} DAST (OWASP ZAP)")
+          add()
+          zap_dir = 'zap-results'
+          if os.path.exists(zap_dir):
+              zap_files = sorted(glob.glob(os.path.join(zap_dir, '*.md')))
+              if zap_files:
+                  add(f"ZAP scanned {len(zap_files)} target(s). See the `zap-reports` artifact for full HTML reports.")
+                  add()
+                  for zf in zap_files:
+                      service = os.path.basename(zf).replace('zap_', '').replace('.md', '')
+                      add(f"- **{service}**: See `{os.path.basename(zf)}`")
+              else:
+                  add("_No ZAP markdown reports found._")
+          else:
+              add("_ZAP reports not available (DAST job may not have run)._")
+          add()
+
+          # Write report
+          report_content = '\n'.join(report_lines)
+          with open('security-findings-report.md', 'w', encoding='utf-8') as f:
+              f.write(report_content)
+          print(report_content)
+          print("\n✅ Report written to security-findings-report.md")
+          PYTHON_SCRIPT
+
+          python generate_report.py
+
+      - name: Upload Security Findings Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-findings-report
+          path: security-findings-report.md
+
+      - name: Pipeline Status Summary
         run: |
           echo "╔════════════════════════════════════════════════════╗"
           echo "║       DevSecOps Security Pipeline — Summary       ║"
@@ -508,13 +767,44 @@ jobs:
           echo "║ IaC (Checkov):           ${{ needs.iac-checkov.result }}"
           echo "║ IaC (Hadolint):          ${{ needs.iac-hadolint.result }}"
           echo "║ Container (Trivy):       ${{ needs.container-trivy.result }}"
-
           echo "║ DAST (ZAP):              ${{ needs.dast-zap.result }}"
           echo "║ SBOM (Syft):             ${{ needs.sbom-syft.result }}"
           echo "╚════════════════════════════════════════════════════╝"
           echo ""
-          echo "All SARIF results are available in:"
-          echo "  Repository → Security → Code Scanning"
-          echo ""
-          echo "ZAP reports and SBOM artifacts are available in:"
-          echo "  Actions → This run → Artifacts"
+          echo "📄 Download the 'security-findings-report' artifact for the full D4 report."
+
+  # ─────────────────────────────────────────────
+  # STEP 9 — CD: Push to GitHub Container Registry
+  # Only runs on main branch after all scans pass.
+  # ─────────────────────────────────────────────
+  deploy-ghcr:
+    name: "🚀 CD · Push to GHCR"
+    runs-on: ubuntu-latest
+    needs: [container-trivy, dast-zap]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth, files, mail, messaging, siem, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push — ${{ matrix.service }}
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}/${{ matrix.service }}
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            docker build -t $IMAGE:latest -t $IMAGE:${{ github.sha }} ./frontend
+          else
+            docker build -t $IMAGE:latest -t $IMAGE:${{ github.sha }} ./services/${{ matrix.service }}
+          fi
+          docker push $IMAGE:latest
+          docker push $IMAGE:${{ github.sha }}

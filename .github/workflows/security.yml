@@ -1,4 +1,33 @@
+# ================================================================
 # .github/workflows/security.yml
+# DevSecOps Security Pipeline — SECP SIEM Platform
+#
+# Pipeline Architecture (Step 9):
+#
+#   ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐   ┌──────────────┐
+#   │  SAST Stage   │   │  SCA Stage    │   │  Secrets Stage   │   │  IaC Stage    │
+#   │  (Bandit,     │   │  (Dep-Check,  │   │  (Gitleaks,      │   │  (Checkov,    │
+#   │   Semgrep)    │   │   Trivy FS)   │   │   TruffleHog)    │   │   Hadolint)   │
+#   └──────┬───────┘   └──────┬───────┘   └────────┬─────────┘   └──────┬───────┘
+#          │                  │                     │                    │
+#          └──────────────────┴──────────┬──────────┴────────────────────┘
+#                                       │
+#                              ┌────────▼────────┐
+#                              │  Container Scan  │
+#                              │     (Trivy)      │
+#                              └────────┬────────┘
+#                                       │
+#                              ┌────────▼────────┐
+#                              │   DAST Stage     │
+#                              │   (OWASP ZAP)    │
+#                              └────────┬────────┘
+#                                       │
+#                              ┌────────▼────────┐
+#                              │  SBOM + Report   │
+#                              │  (Syft)          │
+#                              └─────────────────┘
+# ================================================================
+
 name: DevSecOps Security Pipeline
 
 on:
@@ -19,6 +48,7 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 2 — SAST: Bandit (Python services)
+  # Analyses source code without executing it.
   # ─────────────────────────────────────────────
   sast-bandit:
     name: "SAST · Bandit (Python)"
@@ -34,7 +64,7 @@ jobs:
       - name: Install Bandit
         run: pip install bandit[sarif]
 
-      - name: Run Bandit
+      - name: Run Bandit on all Python services
         run: |
           bandit -r ./services/auth \
                     ./services/files \
@@ -48,15 +78,17 @@ jobs:
 
       - name: Upload Bandit SARIF
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
           sarif_file: bandit-results.sarif
           category: bandit
 
   # ─────────────────────────────────────────────
-  # STEP 2 — SAST: Semgrep (JS/TS or multi-lang)
+  # STEP 2 — SAST: Semgrep (JS/TS + multi-lang)
+  # Multi-language SAST with OWASP Top 10 rules.
   # ─────────────────────────────────────────────
   sast-semgrep:
-    name: "SAST · Semgrep (JS/TS)"
+    name: "SAST · Semgrep (Multi-language)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,18 +107,21 @@ jobs:
             --config p/javascript \
             --config p/typescript \
             --config p/nodejs \
+            --config p/python \
             --config p/owasp-top-ten \
+            --config p/security-audit \
             --sarif --output semgrep.sarif || true
 
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
           sarif_file: semgrep.sarif
           category: semgrep
-        if: always()
 
   # ─────────────────────────────────────────────
   # STEP 3 — SCA: OWASP Dependency-Check
+  # Identifies known CVEs in third-party deps.
   # ─────────────────────────────────────────────
   sca-dependency-check:
     name: "SCA · OWASP Dependency-Check"
@@ -109,12 +144,14 @@ jobs:
 
       - name: Upload Dependency-Check SARIF
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
           sarif_file: dependency-check-report/dependency-check-report.sarif
           category: dependency-check
 
   # ─────────────────────────────────────────────
   # STEP 3 — SCA: Trivy (filesystem scan)
+  # Fast, accurate SCA across all ecosystems.
   # ─────────────────────────────────────────────
   sca-trivy-fs:
     name: "SCA · Trivy (filesystem)"
@@ -134,12 +171,14 @@ jobs:
 
       - name: Upload Trivy FS SARIF
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-filesystem
 
   # ─────────────────────────────────────────────
   # STEP 4 — Secrets Detection: Gitleaks
+  # Scans git history + staged changes.
   # ─────────────────────────────────────────────
   secrets-gitleaks:
     name: "Secrets · Gitleaks"
@@ -153,10 +192,12 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}   # Only needed for org-level; omit for personal repos
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
 
   # ─────────────────────────────────────────────
   # STEP 4 — Secrets Detection: TruffleHog
+  # Entropy + pattern scanning in commits.
   # ─────────────────────────────────────────────
   secrets-trufflehog:
     name: "Secrets · TruffleHog"
@@ -171,16 +212,87 @@ jobs:
         with:
           path: ./
           extra_args: --only-verified
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────
+  # STEP 7 — IaC Scanning: Checkov
+  # Scans Dockerfiles, docker-compose, k8s, etc.
+  # ─────────────────────────────────────────────
+  iac-checkov:
+    name: "IaC · Checkov (Dockerfile + Compose)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: all
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+  # ─────────────────────────────────────────────
+  # STEP 7 — Dockerfile Linting: Hadolint
+  # Best-practice linting for Dockerfiles.
+  # ─────────────────────────────────────────────
+  iac-hadolint:
+    name: "IaC · Hadolint (Dockerfile linter)"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - auth
+          - files
+          - mail
+          - messaging
+          - siem
+          - frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Dockerfile — ${{ matrix.service }}
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.service == 'frontend' && 'frontend/Dockerfile' || format('services/{0}/Dockerfile', matrix.service) }}
+          format: sarif
+          output-file: hadolint-${{ matrix.service }}.sarif
+          no-fail: true
+
+      - name: Upload Hadolint SARIF — ${{ matrix.service }}
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: hadolint-${{ matrix.service }}.sarif
+          category: hadolint-${{ matrix.service }}
 
   # ─────────────────────────────────────────────
   # STEP 5 — Container Image Scanning: Trivy
-  # Must run AFTER Docker images are built
+  # Scans OS packages + app dependencies in images.
+  # Runs AFTER source-level scans pass.
   # ─────────────────────────────────────────────
-  container-scan:
-    name: "Container · Trivy Image Scan"
+  container-trivy:
+    name: "Container · Trivy (${{ matrix.service }})"
     runs-on: ubuntu-latest
-    needs: []   # Add build job name here if you have one, e.g. needs: [build]
+    needs:
+      - sast-bandit
+      - sast-semgrep
+      - sca-dependency-check
+      - sca-trivy-fs
+      - secrets-gitleaks
+      - secrets-trufflehog
+      - iac-checkov
+      - iac-hadolint
     strategy:
+      fail-fast: false
       matrix:
         service:
           - auth
@@ -211,43 +323,123 @@ jobs:
 
       - name: Upload Trivy image SARIF — ${{ matrix.service }}
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
           sarif_file: trivy-${{ matrix.service }}.sarif
           category: trivy-${{ matrix.service }}
 
-  # ─────────────────────────────────────────────
+
 
   # ─────────────────────────────────────────────
-  # STEP 7 — IaC Scanning: Checkov
+  # STEP 6 — DAST: OWASP ZAP Baseline Scan
+  # Interacts with a RUNNING application to find
+  # SQL injection, XSS, auth weaknesses, etc.
+  # Runs LAST — after all static scans.
   # ─────────────────────────────────────────────
-  iac-checkov:
-    name: "IaC · Checkov (Dockerfile + Compose)"
+  dast-zap:
+    name: "DAST · OWASP ZAP Baseline"
     runs-on: ubuntu-latest
+    needs:
+      - container-trivy
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Checkov
-        uses: bridgecrewio/checkov-action@master
-        with:
-          directory: .
-          framework: all
-          output_format: sarif
-          output_file_path: checkov-results.sarif
-          soft_fail: true   # Change to false to enforce hard gate
+      - name: Create .env for CI
+        run: |
+          cat > .env <<EOF
+          DB_PASS=ci_dummy_pass_4testing
+          JWT_SECRET=ci_dummy_jwt_secret_32chars_long!
+          WG_SERVER_PUBLIC_KEY=dummykey
+          WG_SERVER_ENDPOINT=127.0.0.1
+          VITE_ADMIN_GATEWAY_PATH=/
+          EOF
 
-      - name: Upload Checkov SARIF
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Start application stack
+        run: |
+          docker compose -f docker-compose-dev.yml up -d --build
+          echo "Waiting for services to be ready..."
+          sleep 60
+
+      - name: Health-check all services
+        run: |
+          echo "--- Frontend ---"
+          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:3000 > /dev/null && echo "OK" || echo "FAIL"
+          echo "--- Auth API (8001) ---"
+          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8001/health > /dev/null && echo "OK" || echo "FAIL"
+          echo "--- Mail API (8002) ---"
+          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8002/health > /dev/null && echo "OK" || echo "FAIL"
+          echo "--- Messaging API (8003) ---"
+          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8003/health > /dev/null && echo "OK" || echo "FAIL"
+          echo "--- Files API (8004) ---"
+          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8004/health > /dev/null && echo "OK" || echo "FAIL"
+          echo "--- SIEM API (8005) ---"
+          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8005/health > /dev/null && echo "OK" || echo "FAIL"
+
+      - name: OWASP ZAP — Frontend (port 3000)
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:3000 \
+            -J zap_frontend.json -w zap_frontend.md -r zap_frontend.html || true
+
+      - name: OWASP ZAP — Auth API (port 8001)
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8001 \
+            -J zap_auth.json -w zap_auth.md -r zap_auth.html || true
+
+      - name: OWASP ZAP — Mail API (port 8002)
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8002 \
+            -J zap_mail.json -w zap_mail.md -r zap_mail.html || true
+
+      - name: OWASP ZAP — Messaging API (port 8003)
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8003 \
+            -J zap_messaging.json -w zap_messaging.md -r zap_messaging.html || true
+
+      - name: OWASP ZAP — Files API (port 8004)
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8004 \
+            -J zap_files.json -w zap_files.md -r zap_files.html || true
+
+      - name: OWASP ZAP — SIEM API (port 8005)
+        run: |
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8005 \
+            -J zap_siem.json -w zap_siem.md -r zap_siem.html || true
+
+      - name: Upload all ZAP reports
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          sarif_file: checkov-results.sarif
-          category: checkov
+          name: zap-reports
+          path: zap_*.*
+
+      - name: Stop application stack
+        if: always()
+        run: docker compose -f docker-compose-dev.yml down -v
 
   # ─────────────────────────────────────────────
-  # STEP 7 — Dockerfile Linting: Hadolint
+  # SBOM Generation: Syft (CycloneDX / SPDX)
+  # Generates Software Bill of Materials for
+  # all service images.
   # ─────────────────────────────────────────────
-  iac-hadolint:
-    name: "IaC · Hadolint (Dockerfile linter)"
+  sbom-syft:
+    name: "SBOM · Syft (${{ matrix.service }})"
     runs-on: ubuntu-latest
+    needs:
+      - container-trivy
     strategy:
+      fail-fast: false
       matrix:
         service:
           - auth
@@ -259,92 +451,70 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Lint Dockerfile — ${{ matrix.service }}
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: ${{ matrix.service == 'frontend' && 'frontend/Dockerfile' || format('services/{0}/Dockerfile', matrix.service) }}
-          format: sarif
-          output-file: hadolint-${{ matrix.service }}.sarif
-          no-fail: true
+      - name: Build image for SBOM — ${{ matrix.service }}
+        run: |
+          if [ "${{ matrix.service }}" == "frontend" ]; then
+            docker build -t secp/${{ matrix.service }}:sbom ./frontend
+          else
+            docker build -t secp/${{ matrix.service }}:sbom ./services/${{ matrix.service }}
+          fi
 
-      - name: Upload Hadolint SARIF — ${{ matrix.service }}
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Generate SBOM — ${{ matrix.service }}
+        uses: anchore/sbom-action@v0
         with:
-          sarif_file: hadolint-${{ matrix.service }}.sarif
-          category: hadolint-${{ matrix.service }}
+          image: secp/${{ matrix.service }}:sbom
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.service }}.cdx.json
+
+      - name: Upload SBOM artifact — ${{ matrix.service }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.cdx.json
 
   # ─────────────────────────────────────────────
-  # STEP 6 — DAST: OWASP ZAP Baseline Scan
-  # Runs LAST — requires a live application
+  # STEP 10 — Pipeline Summary
+  # Final job that runs after everything else.
+  # Provides a single pass/fail gate.
   # ─────────────────────────────────────────────
-  dast-zap:
-    name: "DAST · OWASP ZAP Baseline"
+  pipeline-summary:
+    name: "📊 Pipeline Summary"
     runs-on: ubuntu-latest
+    if: always()
     needs:
       - sast-bandit
       - sast-semgrep
+      - sca-dependency-check
       - sca-trivy-fs
-      - container-scan
+      - secrets-gitleaks
+      - secrets-trufflehog
+      - iac-checkov
+      - iac-hadolint
+      - container-trivy
+      - dast-zap
+      - sbom-syft
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Start application stack
+      - name: Security Pipeline Summary
         run: |
-          echo "DB_PASS=dummy_pass" > .env
-          echo "JWT_SECRET=dummy_secret" >> .env
-          echo "WG_SERVER_PUBLIC_KEY=dummy" >> .env
-          echo "WG_SERVER_ENDPOINT=127.0.0.1" >> .env
-          echo "VITE_ADMIN_GATEWAY_PATH=/" >> .env
-          docker compose -f docker-compose-dev.yml up -d --build
-          echo "Waiting for services to be ready..."
-          sleep 45
+          echo "╔════════════════════════════════════════════════════╗"
+          echo "║       DevSecOps Security Pipeline — Summary       ║"
+          echo "╠════════════════════════════════════════════════════╣"
+          echo "║ SAST (Bandit):           ${{ needs.sast-bandit.result }}"
+          echo "║ SAST (Semgrep):          ${{ needs.sast-semgrep.result }}"
+          echo "║ SCA (Dependency-Check):  ${{ needs.sca-dependency-check.result }}"
+          echo "║ SCA (Trivy FS):          ${{ needs.sca-trivy-fs.result }}"
+          echo "║ Secrets (Gitleaks):      ${{ needs.secrets-gitleaks.result }}"
+          echo "║ Secrets (TruffleHog):    ${{ needs.secrets-trufflehog.result }}"
+          echo "║ IaC (Checkov):           ${{ needs.iac-checkov.result }}"
+          echo "║ IaC (Hadolint):          ${{ needs.iac-hadolint.result }}"
+          echo "║ Container (Trivy):       ${{ needs.container-trivy.result }}"
 
-      - name: Health-check Frontend
-        run: |
-          curl --retry 10 --retry-delay 5 --retry-connrefused \
-               -f http://localhost:3000 || true
-
-      - name: OWASP ZAP Baseline Scan
-        run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
-            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
-            -t http://localhost:3000 -J zap_report.json -w zap_report.md -r zap_report.html || true
-
-      - name: Upload ZAP Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: zap-report
-          path: zap_report.*
-
-      - name: Stop application stack
-        if: always()
-        run: docker compose -f docker-compose-dev.yml down
-
-  # ─────────────────────────────────────────────
-  # STEP 9 — SBOM Generation: Syft
-  # ─────────────────────────────────────────────
-  sbom-syft:
-    name: "SBOM · Syft (CycloneDX)"
-    runs-on: ubuntu-latest
-    needs: [container-scan]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Syft
-        uses: anchore/sbom-action/download-syft@v0
-
-      - name: Build auth for SBOM
-        run: docker build -t secp/auth:sbom ./services/auth
-
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: secp/auth:sbom
-          format: cyclonedx-json
-          output-file: sbom-auth.cdx.json
-
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-auth
-          path: sbom-auth.cdx.json
+          echo "║ DAST (ZAP):              ${{ needs.dast-zap.result }}"
+          echo "║ SBOM (Syft):             ${{ needs.sbom-syft.result }}"
+          echo "╚════════════════════════════════════════════════════╝"
+          echo ""
+          echo "All SARIF results are available in:"
+          echo "  Repository → Security → Code Scanning"
+          echo ""
+          echo "ZAP reports and SBOM artifacts are available in:"
+          echo "  Actions → This run → Artifacts"

@@ -9,6 +9,7 @@ import json
 import logging
 import sys
 import os
+from http.cookies import SimpleCookie
 
 # Add app directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,6 +24,26 @@ logger = logging.getLogger(__name__)
 
 # All connected admin WebSocket clients
 connected_clients: set = set()
+ACCESS_COOKIE = "secp_access_token"
+
+
+def _get_cookie_token(websocket) -> str | None:
+    headers = getattr(websocket, "request_headers", None)
+    cookie_header = None
+    if headers:
+        cookie_header = headers.get("Cookie") or headers.get("cookie")
+    elif hasattr(websocket, "request"):
+        req_headers = getattr(websocket.request, "headers", None)
+        if req_headers:
+            cookie_header = req_headers.get("Cookie") or req_headers.get("cookie")
+
+    if not cookie_header:
+        return None
+
+    cookies = SimpleCookie()
+    cookies.load(cookie_header)
+    morsel = cookies.get(ACCESS_COOKIE)
+    return morsel.value if morsel else None
 
 
 async def handler(websocket):
@@ -56,6 +77,9 @@ async def handler(websocket):
                 token = params.get('token', [None])[0]
         except Exception:
             pass
+
+    if not token:
+        token = _get_cookie_token(websocket)
 
     if not token:
         await websocket.close(1008, "Missing token")

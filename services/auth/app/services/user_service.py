@@ -1,5 +1,6 @@
 import base64
 import os
+import subprocess
 import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -8,8 +9,6 @@ import crud
 from security import hash_password, verify_password
 from schemas import UserCreate, PasswordChange, AdminUserUpdate
 from siem import siem_emit
-from cryptography.hazmat.primitives.asymmetric import x25519
-from cryptography.hazmat.primitives import serialization
 from config import (
     WG_SERVER_PUBLIC_KEY, 
     WG_SERVER_ENDPOINT, 
@@ -19,21 +18,25 @@ from config import (
 )
 
 def _generate_wg_keys():
-    """Programmatically generate a WireGuard key pair."""
-    private_key = x25519.X25519PrivateKey.generate()
-    public_key = private_key.public_key()
+    """Generate a WireGuard key pair using the wg CLI tool directly.
     
-    priv_b64 = base64.b64encode(private_key.private_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PrivateFormat.Raw,
-        encryption_algorithm=serialization.NoEncryption()
-    )).decode()
-    
-    pub_b64 = base64.b64encode(public_key.public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw
-    )).decode()
-    
+    Uses wg genkey + wg pubkey to guarantee the keys are 100% compatible
+    with WireGuard's Curve25519 implementation (avoids potential byte-format
+    mismatches with Python's cryptography library).
+    """
+    genkey = subprocess.run(
+        ["wg", "genkey"],
+        capture_output=True, text=True, check=True,
+    )
+    priv_b64 = genkey.stdout.strip()
+
+    pubkey = subprocess.run(
+        ["wg", "pubkey"],
+        input=priv_b64,
+        capture_output=True, text=True, check=True,
+    )
+    pub_b64 = pubkey.stdout.strip()
+
     return priv_b64, pub_b64
 
 def provision_vpn(db: Session, username: str):
@@ -56,6 +59,16 @@ def provision_vpn(db: Session, username: str):
         os.makedirs(os.path.dirname(WG_CONFIG_PATH), exist_ok=True)
         with open(WG_CONFIG_PATH, "a") as f:
             f.write(peer_block)
+        # Sync the updated conf to the live wg0 interface via the UAPI socket
+        sync_result = subprocess.run([
+            "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+            "wg", "syncconf", "wg0", "/dev/stdin"
+        ], input=subprocess.check_output(["wg-quick", "strip", "wg0"], text=True),
+           capture_output=True, text=True)
+        if sync_result.returncode != 0:
+            print(f"Warning: wg syncconf failed: {sync_result.stderr.strip()}")
+        else:
+            print(f"WireGuard peer {pub_b64} synced to live interface")
     except Exception as e:
         print(f"Warning: Could not write to WireGuard config: {e}")
 
@@ -68,7 +81,7 @@ DNS = 1.1.1.1
 [Peer]
 PublicKey = {WG_SERVER_PUBLIC_KEY}
 Endpoint = {WG_SERVER_ENDPOINT}
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = 10.8.0.1/32
 PersistentKeepalive = 25
 """
     return pub_b64, priv_b64, next_ip, client_conf
@@ -184,6 +197,46 @@ def update_user_profile(db: Session, user_id: str, body: AdminUserUpdate, admin_
               payload={"by_admin": admin_id, "new_role": body.role.value if body.role else None})
     return user
 
+def _remove_wg_peer(public_key: str):
+    """Remove a [Peer] block from wg0.conf by its PublicKey and restart WireGuard."""
+    if not public_key:
+        return
+    try:
+        with open(WG_CONFIG_PATH, "r") as f:
+            lines = f.readlines()
+
+        # Walk through lines, skip the [Peer] block whose PublicKey matches
+        new_lines = []
+        skip = False
+        for line in lines:
+            stripped = line.strip()
+            # A comment line starting with "# User:" right before [Peer] should also be removed
+            if stripped.startswith("[Peer]") or stripped.startswith("[Interface]"):
+                skip = False  # reset on any section header
+            if stripped == "[Peer]":
+                # Look ahead: check if the next non-empty line has our key
+                idx = lines.index(line)
+                block = "".join(lines[idx:idx+5])
+                if f"PublicKey = {public_key}" in block:
+                    skip = True
+                    # Also remove the comment line before [Peer] if present
+                    if new_lines and new_lines[-1].strip().startswith("# User:"):
+                        new_lines.pop()
+            if not skip:
+                new_lines.append(line)
+
+        with open(WG_CONFIG_PATH, "w") as f:
+            f.writelines(new_lines)
+
+        # Sync updated conf (without removed peer) to the live wg0 interface
+        subprocess.run([
+            "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+            "wg", "syncconf", "wg0", "/dev/stdin"
+        ], input=subprocess.check_output(["wg-quick", "strip", "wg0"], text=True),
+           capture_output=True, text=True)
+    except Exception as e:
+        print(f"Warning: Could not remove WireGuard peer: {e}")
+
 def suspend_user_account(db: Session, user_id: str, admin_id: str):
     user = crud.get_user_by_id(db, user_id)
     if not user:
@@ -192,6 +245,8 @@ def suspend_user_account(db: Session, user_id: str, admin_id: str):
     user.is_active = False
     crud.revoke_all_refresh_tokens_for_user(db, user_id)
     db.commit()
+
+    _remove_wg_peer(user.vpn_public_key)
 
     siem_emit(db, "ACCOUNT_SUSPENDED", "HIGH", user_id=user_id,
               payload={"by_admin": admin_id})
@@ -202,9 +257,14 @@ def delete_user_account(db: Session, user_id: str, admin_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Remove VPN access before wiping user data
+    _remove_wg_peer(user.vpn_public_key)
+
     user.is_active = False
     user.username  = f"deleted_{user.username}"
     user.email     = f"deleted_{user.email}"
+    user.vpn_public_key = None
+    user.vpn_private_key = None
     db.commit()
 
     siem_emit(db, "ACCOUNT_DELETED", "HIGH", user_id=user_id,

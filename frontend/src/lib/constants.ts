@@ -1,36 +1,25 @@
 /* ------------------------------------------------------------------
- *  Service base URLs
- *  In production these should come from env vars; for local dev the
- *  backend services bind to localhost on the ports below.
+ *  Service base URLs — dynamically resolved from the browser's
+ *  current host so the app works from any IP (LAN or VPN).
  * ------------------------------------------------------------------ */
 
-const API_HOST = import.meta.env.VITE_API_HOST ?? 'http://localhost';
+const _host     = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+const _protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
+const _BASE     = `${_protocol}//${_host}`;
 
-/** Auth service – JWT, bcrypt, account lockout */
-export const AUTH_BASE    = `${API_HOST}:8001`;
+export const AUTH_BASE    = `${_BASE}:8001`;
+export const MAIL_BASE    = `${_BASE}:8002`;
+export const MSG_BASE     = `${_BASE}:8003`;
+export const FILES_BASE   = `${_BASE}:8004`;
+export const SIEM_BASE    = `${_BASE}:8005`;
 
-/** Mail service – MailHog-backed internal email */
-export const MAIL_BASE    = `${API_HOST}:8002`;
+/* ---- WebSocket ---- */
+const _ws      = _protocol === 'https:' ? 'wss:' : 'ws:';
+const _WS_BASE = `${_ws}//${_host}`;
 
-/** Messaging service – REST + WebSocket real-time chat */
-export const MSG_BASE     = `${API_HOST}:8003`;
+export const MSG_WS_URL  = `${_WS_BASE}:8003/ws`;
+export const SIEM_WS_URL = `${_WS_BASE}:8006`;
 
-/** Files service – upload / download with RBAC */
-export const FILES_BASE   = `${API_HOST}:8004`;
-
-/** SIEM engine – events, alerts, baselines */
-export const SIEM_BASE    = `${API_HOST}:8005`;
-
-/* ---- WebSocket endpoints ---- */
-
-const WS_HOST = import.meta.env.VITE_WS_HOST ?? 'ws://localhost';
-
-/** Messaging WebSocket */
-export const MSG_WS_URL   = `${WS_HOST}:8003/ws`;
-
-/** SIEM real-time alert push */
-export const SIEM_WS_URL  = `${WS_HOST}:8006`;
-
-/* ---- WireGuard VPN Settings ---- */
-export const WG_SERVER_PUBLIC_KEY = import.meta.env.VITE_WG_SERVER_PUBLIC_KEY || '2UlMAQixriuFu1X0PWOkxxDEPN0Y+KH8DghpOs6al0I=';
+/* ---- WireGuard ---- */
+export const WG_SERVER_PUBLIC_KEY = import.meta.env.VITE_WG_SERVER_PUBLIC_KEY || '';
 export const WG_SERVER_ENDPOINT   = import.meta.env.VITE_WG_SERVER_ENDPOINT   || 'secp.abrdns.com:51820';

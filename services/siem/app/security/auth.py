@@ -4,11 +4,12 @@ Same pattern as auth/mail: verifies tokens issued by auth service.
 Only IT_ADMIN can access SIEM endpoints.
 """
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from core.config import JWT_SECRET, JWT_ALGORITHM
 
-security = HTTPBearer()
+ACCESS_COOKIE = "secp_access_token"
+security = HTTPBearer(auto_error=False)
 
 
 def decode_token(token: str) -> dict:
@@ -22,13 +23,18 @@ def decode_token(token: str) -> dict:
 
 
 def get_current_admin(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """
     Validates JWT and enforces IT_ADMIN role.
     Returns the decoded JWT payload.
     """
-    payload = decode_token(credentials.credentials)
+    token = credentials.credentials if credentials else request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing access token")
+
+    payload = decode_token(token)
 
     raw_sub = payload.get("sub")
     if not raw_sub:

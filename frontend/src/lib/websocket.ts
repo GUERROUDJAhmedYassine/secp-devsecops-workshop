@@ -3,10 +3,8 @@
  *  Provides a reconnecting WebSocket wrapper used for:
  *    • Messaging   (:8003/ws)
  *    • SIEM alerts  (:8006)
- *  The JWT token is passed as a query parameter for authentication.
+ *  Authentication uses the HttpOnly access-token cookie.
  * ------------------------------------------------------------------ */
-
-import { getAccessToken } from './tokenManager';
 
 export type WsMessageHandler = (data: unknown) => void;
 
@@ -91,11 +89,7 @@ export class WsManager {
   private open(): void {
     if (this.disposed) return;
 
-    const token = getAccessToken();
-    const separator = this.url.includes('?') ? '&' : '?';
-    const fullUrl = token ? `${this.url}${separator}token=${encodeURIComponent(token)}` : this.url;
-
-    this.ws = new WebSocket(fullUrl);
+    this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
       this.retries = 0;

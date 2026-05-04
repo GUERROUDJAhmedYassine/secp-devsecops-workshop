@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { User, UserRole, LoginCredentials, AuthTokens } from '../types/user.types';
-import { setTokens, clearTokens, getAccessToken } from '../lib/tokenManager';
+import { setTokens, clearTokens } from '../lib/tokenManager';
 import { AUTH_BASE } from '../lib/constants';
 import { apiGet, apiPost } from '../lib/apiClient';
 
@@ -39,20 +39,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  /* Attempt to restore the session from a stored token on mount */
+  /* Attempt to restore the session from the HttpOnly access cookie on mount */
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
-
-    apiGet<User>(`${AUTH_BASE}/auth/me`)
+    apiGet<User>(`${AUTH_BASE}/auth/me`, { skipAuth: true })
       .then((u) => setUser(u))
       .catch(() => {
         clearTokens();
       })
       .finally(() => setIsLoading(false));
+  }, []);
+
+  /* Listen for session expiry events fired by apiClient (avoids full-page reload) */
+  useEffect(() => {
+    const handler = () => {
+      clearTokens();
+      setUser(null);
+    };
+    window.addEventListener('auth:expired', handler);
+    return () => window.removeEventListener('auth:expired', handler);
   }, []);
 
   /* ---- login ---- */
@@ -65,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${AUTH_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           username: creds.username,
           password: creds.password,

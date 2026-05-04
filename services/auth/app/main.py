@@ -9,9 +9,12 @@ from routers import auth, admin
 
 app = FastAPI(title="SECP Auth Service", version="1.0.0")
 
+# Allow any host on port 3000 (covers LAN, VPN, localhost)
+CORS_ORIGIN_REGEX = r"http://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -20,14 +23,6 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(admin.router)
 
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 

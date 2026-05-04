@@ -39,6 +39,14 @@ export interface FilePreviewResponse {
   content: string;
 }
 
+export interface FileVersionRecord {
+  id: string;
+  file_id: string;
+  filename: string;
+  file_size: number;
+  created_at: string;
+}
+
 /** Frontend-computed storage info (derived from the file list). */
 export interface StorageInfo {
   used_gb: number;

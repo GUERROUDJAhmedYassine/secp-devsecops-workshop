@@ -11,9 +11,10 @@ from app.collaboration import collaboration_manager
 from app.config import now_utc, sanitize_filename, uploads_root
 from app.dependencies import get_db
 from app.events import emit_event
-from app.models import CollaborationSessionResponse, CollaborationStateResponse, CurrentUser, FilePreviewResponse, FileRecord, ListResponse, UploadResponse
+from app.models import CollaborationSessionResponse, CollaborationStateResponse, CurrentUser, FilePreviewResponse, FileRecord, FileVersionListResponse, ListResponse, UploadResponse
 from app.permissions import bucket_to_dir, can_delete_record, can_read_record, ensure_bucket_allowed_for_upload, get_file_row, list_member_room_ids
-from app.preview import load_docx_preview, load_text_preview, preview_kind_for_file
+from app.preview import is_docx_file, load_docx_preview, load_text_preview, preview_kind_for_file, repair_docx_if_raw_html
+from app.versions import get_file_version_path, list_file_versions
 
 router = APIRouter(tags=["files"])
 
@@ -137,6 +138,8 @@ async def download_file(
     path = Path(rec["storage_path"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing on disk")
+    if is_docx_file(rec["filename"], rec["mime_type"]):
+        repair_docx_if_raw_html(path)
 
     await emit_event(
         pool,
@@ -168,6 +171,60 @@ async def download_file(
         )
 
     return FileResponse(path=str(path), filename=rec["filename"], media_type=rec["mime_type"] or "application/octet-stream")
+
+
+@router.get("/files/{file_id}/versions", response_model=FileVersionListResponse)
+async def list_versions(
+    file_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_db),
+) -> FileVersionListResponse:
+    rec = await get_file_row(pool, file_id)
+    member_room_ids = await _member_room_ids_for_user(pool, user)
+    if not can_read_record(rec, user, member_room_ids=member_room_ids):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return FileVersionListResponse(items=list_file_versions(file_id, rec["filename"]))
+
+
+@router.get("/files/{file_id}/versions/{version_id}")
+async def download_version(
+    request: Request,
+    file_id: uuid.UUID,
+    version_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    pool: asyncpg.Pool = Depends(get_db),
+) -> FileResponse:
+    rec = await get_file_row(pool, file_id)
+    member_room_ids = await _member_room_ids_for_user(pool, user)
+    if not can_read_record(rec, user, member_room_ids=member_room_ids):
+        await emit_event(
+            pool,
+            event_type="UNAUTHORIZED_ACCESS",
+            severity="HIGH",
+            user=user,
+            request=request,
+            payload={"file_id": str(file_id), "action": "download_version", "bucket": rec["bucket"]},
+        )
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    version_path = get_file_version_path(file_id, version_id)
+    if version_path is None or not version_path.exists():
+        raise HTTPException(status_code=404, detail="File version not found")
+    if is_docx_file(rec["filename"], rec["mime_type"]):
+        repair_docx_if_raw_html(version_path)
+
+    await emit_event(
+        pool,
+        event_type="FILE_VERSION_DOWNLOAD",
+        severity="INFO",
+        user=user,
+        request=request,
+        payload={"file_id": str(file_id), "version_id": version_id, "bucket": rec["bucket"], "filename": rec["filename"]},
+    )
+
+    version_filename = f"{Path(rec['filename']).stem}.{version_id}{Path(rec['filename']).suffix}"
+    return FileResponse(path=str(version_path), filename=version_filename, media_type=rec["mime_type"] or "application/octet-stream")
 
 
 @router.get("/files/{file_id}/preview", response_model=FilePreviewResponse)
@@ -317,9 +374,15 @@ async def collaboration_websocket(
     websocket: WebSocket,
     file_id: uuid.UUID,
     session_id: str,
-    token: str = Query(...),
+    token: str | None = Query(default=None),
 ) -> None:
     await websocket.accept()
+
+    token = token or websocket.cookies.get("secp_access_token")
+    if not token:
+        await websocket.send_json({"type": "error", "detail": "Missing token"})
+        await websocket.close(code=4401)
+        return
 
     try:
         user = get_current_user_from_token(token)

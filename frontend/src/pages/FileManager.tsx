@@ -21,12 +21,13 @@ import {
   ArrowLeft,
   FolderOpen,
   MessageSquare,
+  History,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useFiles } from '../hooks/useFiles';
 import { deriveCategory, formatFileSize, supportsCollaboration, supportsPreview } from '../types/files.types';
-import type { FileCategory, CollaborationSessionResponse, SecureFile } from '../types/files.types';
-import { downloadFile, uploadFile, startCollaboration } from '../api/files';
+import type { FileCategory, CollaborationSessionResponse, SecureFile, FileVersionRecord } from '../types/files.types';
+import { downloadFile, uploadFile, startCollaboration, listFileVersions, downloadFileVersion } from '../api/files';
 import { useTheme } from '../hooks/useTheme';
 import { useSidebar } from '../context/SidebarContext';
 import { useAuth } from '../hooks/useAuth';
@@ -159,6 +160,10 @@ export default function FileManager() {
   const [activeSession, setActiveSession] = useState<CollaborationSessionResponse | null>(null);
   const [activeFilename, setActiveFilename] = useState<string>('');
   const [previewFile, setPreviewFile] = useState<SecureFile | null>(null);
+  const [versionFile, setVersionFile] = useState<SecureFile | null>(null);
+  const [versions, setVersions] = useState<FileVersionRecord[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
 
   const [rooms, setRooms] = useState<Room[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(true);
@@ -375,6 +380,21 @@ export default function FileManager() {
     }
   };
 
+  const openVersionHistory = async (file: SecureFile) => {
+    setVersionFile(file);
+    setVersions([]);
+    setVersionsError(null);
+    setVersionsLoading(true);
+    try {
+      setVersions(await listFileVersions(file.id));
+    } catch (error) {
+      console.error('Failed to load file versions:', error);
+      setVersionsError(error instanceof Error ? error.message : 'Failed to load versions');
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
   const handleSelectStandardBucket = (tab: string) => {
     setSelectedProjectId(null);
     setBucketFilter(tab);
@@ -468,6 +488,61 @@ export default function FileManager() {
           onClose={() => setPreviewFile(null)}
         />
       )}
+
+      <ModalShell
+        title={versionFile ? `Version history: ${versionFile.filename}` : 'Version history'}
+        open={Boolean(versionFile)}
+        onClose={() => {
+          setVersionFile(null);
+          setVersions([]);
+          setVersionsError(null);
+        }}
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <div className="text-xs font-bold uppercase tracking-widest text-muted">Current file</div>
+            <div className="mt-1 text-sm font-bold text-primary truncate">{versionFile?.filename}</div>
+          </div>
+
+          {versionsLoading && (
+            <div className="text-sm font-medium text-muted">Loading versions...</div>
+          )}
+
+          {versionsError && (
+            <div className="text-sm font-medium text-red-500">{versionsError}</div>
+          )}
+
+          {!versionsLoading && !versionsError && versions.length === 0 && (
+            <div className="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-sm text-muted">
+              No previous versions yet. A version is created automatically when an edited file is saved.
+            </div>
+          )}
+
+          {!versionsLoading && versions.length > 0 && (
+            <div className="max-h-80 overflow-y-auto border border-border rounded-xl">
+              {versions.map((version) => (
+                <div key={version.id} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border last:border-b-0">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-primary">Saved {formatDate(version.created_at)}</div>
+                    <div className="text-xs text-muted">
+                      {formatFileSize(version.file_size)} | {version.id}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (!versionFile) return;
+                      void downloadFileVersion(versionFile.id, version.id, version.filename);
+                    }}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-card hover:bg-border text-primary border border-border transition-colors"
+                  >
+                    <Download className="w-4 h-4" /> Download
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </ModalShell>
 
       <ModalShell
         title="Create project workspace"
@@ -941,6 +1016,9 @@ export default function FileManager() {
                             <Edit3 className="w-4 h-4" />
                           </button>
                         )}
+                        <button onClick={() => void openVersionHistory(file)} className="p-2 text-muted hover:text-[#a855f7] hover:bg-[#a855f7]/10 rounded-lg transition-colors" title="Version history">
+                          <History className="w-4 h-4" />
+                        </button>
                         <button onClick={() => downloadFile(file.id)} className="p-2 text-muted hover:text-[#4f8ef7] hover:bg-[#4f8ef7]/10 rounded-lg transition-colors" title="Download">
                           <Download className="w-4 h-4" />
                         </button>

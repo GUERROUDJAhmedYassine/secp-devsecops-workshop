@@ -557,6 +557,15 @@ jobs:
           path: zap-results
         continue-on-error: true
 
+      - name: Debug — show downloaded artifact tree
+        if: always()
+        run: |
+          echo "=== sarif-results tree ==="
+          find sarif-results -type f 2>/dev/null | sort || echo "(empty or missing)"
+          echo ""
+          echo "=== zap-results tree ==="
+          find zap-results -type f 2>/dev/null | sort || echo "(empty or missing)"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -743,12 +752,21 @@ jobs:
           }
 
           if os.path.exists(zap_dir):
-              for zap_file in sorted(glob.glob(os.path.join(zap_dir, 'zap_*.json'))):
-                  basename = os.path.basename(zap_file)          # e.g. zap_auth.json
+              # actions/download-artifact@v4 may nest files under an extra
+              # subdirectory named after the artifact, so search recursively.
+              zap_json_files = sorted(
+                  glob.glob(os.path.join(zap_dir, '**', 'zap_*.json'), recursive=True)
+              )
+              print(f"[ZAP] Found {len(zap_json_files)} JSON file(s): {zap_json_files}")
+              for zap_file in zap_json_files:
+                  basename = os.path.basename(zap_file)
                   service  = basename.replace('zap_', '').replace('.json', '')
                   findings = parse_zap_json(zap_file)
+                  print(f"[ZAP] {basename} -> {len(findings)} instance(s)")
                   zap_findings_by_service[service] = findings
                   zap_all_findings.extend(findings)
+          else:
+              print(f"[ZAP] Directory '{zap_dir}' does not exist — skipping.")
 
           # ── Summary statistics ───────────────────────────────────────────
           add("## 2. Findings Overview")
@@ -948,4 +966,4 @@ jobs:
             docker build -t $IMAGE:latest -t $IMAGE:${{ github.sha }} ./services/${{ matrix.service }}
           fi
           docker push $IMAGE:latest
-          docker push $IMAGE:${{ github.sha }} 
+          docker push $IMAGE:${{ github.sha }}

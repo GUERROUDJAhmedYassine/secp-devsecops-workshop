@@ -800,7 +800,8 @@ jobs:
 
       - name: Build and Push — ${{ matrix.service }}
         run: |
-          IMAGE=ghcr.io/${{ github.repository }}/${{ matrix.service }}
+          REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE=ghcr.io/$REPO/${{ matrix.service }}
           if [ "${{ matrix.service }}" == "frontend" ]; then
             docker build -t $IMAGE:latest -t $IMAGE:${{ github.sha }} ./frontend
           else

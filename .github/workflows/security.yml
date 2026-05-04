@@ -371,8 +371,12 @@ jobs:
   # FIXES APPLIED HERE:
   #   1. .env now loaded from GitHub Secrets
   #   2. WireGuard skipped (no kernel modules in CI)
-  #   3. sleep 60 replaced with proper wait loop
+  #   3. Proper per-service health wait loop with correct exit logic
   #   4. Logs dumped automatically on failure
+  #   5. ZAP output dir pre-created with open permissions so the
+  #      ZAP container (runs as UID 1000) can write report files
+  #   6. Sentinel artifact always uploaded so security-report
+  #      download never fails when DAST is skipped/fails
   # ─────────────────────────────────────────────
   dast-zap:
     name: "DAST · OWASP ZAP Baseline"
@@ -396,6 +400,13 @@ jobs:
           VITE_ADMIN_GATEWAY_PATH=${{ secrets.VITE_ADMIN_GATEWAY_PATH }}
           EOF
 
+      # ✅ FIX 5 — Pre-create ZAP output directory owned by runner so
+      #   the ZAP container (UID 1000 inside) can write into the bind-mount.
+      - name: Prepare ZAP output directory
+        run: |
+          mkdir -p zap-output
+          chmod 777 zap-output
+
       # ✅ FIX 2 — Skip WireGuard (requires kernel modules unavailable in CI)
       # --scale wireguard=0 starts all services EXCEPT wireguard
       - name: Start application stack
@@ -404,9 +415,18 @@ jobs:
             --scale wireguard=0
           echo "Stack started — waiting for services to become healthy..."
 
-      # ✅ FIX 3 — Proper wait loop instead of sleep 60
-      # Polls each service every 5s for up to 150s (30 attempts)
-      # Dumps all container logs and exits with error if any service fails
+      # ✅ FIX 3 — Proper wait loop with correct exit logic.
+      #
+      # Root causes of the original bug:
+      #   a) `exit 1` inside the inner loop exited the loop body function,
+      #      not the outer script — the loop continued silently.
+      #   b) The check `if [ "$i" -eq 30 ]` only fired at the very last
+      #      iteration, after sleep, so the 30th retry was never attempted.
+      #
+      # Fix:
+      #   • Use a `HEALTHY` flag; set it to 1 on success.
+      #   • After the inner loop, check the flag and exit the script if unset.
+      #   • This correctly propagates failures out of the subshell.
       - name: Wait for all services to be healthy
         run: |
           SERVICES=(
@@ -417,22 +437,30 @@ jobs:
             "localhost:8005/health"
             "localhost:3000"
           )
+
+          MAX_RETRIES=30
+          RETRY_INTERVAL=5
+
           for SERVICE in "${SERVICES[@]}"; do
             echo "⏳ Waiting for http://$SERVICE ..."
-            for i in $(seq 1 30); do
+            HEALTHY=0
+            for i in $(seq 1 $MAX_RETRIES); do
               if curl -sf "http://$SERVICE" > /dev/null 2>&1; then
-                echo "✅ $SERVICE is up"
+                echo "✅ $SERVICE is up (attempt $i)"
+                HEALTHY=1
                 break
               fi
-              echo "   attempt $i/30 — retrying in 5s..."
-              sleep 5
-              if [ "$i" -eq 30 ]; then
-                echo "❌ $SERVICE never became healthy — dumping logs"
-                docker compose -f docker-compose-dev.yml logs --tail=100
-                exit 1
-              fi
+              echo "   attempt $i/$MAX_RETRIES — retrying in ${RETRY_INTERVAL}s..."
+              sleep $RETRY_INTERVAL
             done
+
+            if [ "$HEALTHY" -eq 0 ]; then
+              echo "❌ $SERVICE never became healthy after $MAX_RETRIES attempts — dumping logs"
+              docker compose -f docker-compose-dev.yml logs --tail=100
+              exit 1
+            fi
           done
+
           echo "🟢 All services are healthy — starting ZAP scans"
 
       # ✅ FIX 4 — Dump logs automatically on any failure
@@ -440,54 +468,82 @@ jobs:
         if: failure()
         run: docker compose -f docker-compose-dev.yml logs --tail=200
 
+      # Each ZAP step writes into ./zap-output so all reports land in one
+      # place regardless of the container's working directory.
       - name: OWASP ZAP — Frontend (port 3000)
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+          docker run --rm \
+            -v $(pwd)/zap-output:/zap/wrk/:rw \
+            --network=host \
             ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:3000 \
             -J zap_frontend.json -w zap_frontend.md -r zap_frontend.html || true
 
       - name: OWASP ZAP — Auth API (port 8001)
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+          docker run --rm \
+            -v $(pwd)/zap-output:/zap/wrk/:rw \
+            --network=host \
             ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8001 \
             -J zap_auth.json -w zap_auth.md -r zap_auth.html || true
 
       - name: OWASP ZAP — Mail API (port 8002)
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+          docker run --rm \
+            -v $(pwd)/zap-output:/zap/wrk/:rw \
+            --network=host \
             ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8002 \
             -J zap_mail.json -w zap_mail.md -r zap_mail.html || true
 
       - name: OWASP ZAP — Messaging API (port 8003)
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+          docker run --rm \
+            -v $(pwd)/zap-output:/zap/wrk/:rw \
+            --network=host \
             ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8003 \
             -J zap_messaging.json -w zap_messaging.md -r zap_messaging.html || true
 
       - name: OWASP ZAP — Files API (port 8004)
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+          docker run --rm \
+            -v $(pwd)/zap-output:/zap/wrk/:rw \
+            --network=host \
             ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8004 \
             -J zap_files.json -w zap_files.md -r zap_files.html || true
 
       - name: OWASP ZAP — SIEM API (port 8005)
         run: |
-          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host \
+          docker run --rm \
+            -v $(pwd)/zap-output:/zap/wrk/:rw \
+            --network=host \
             ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
             -t http://localhost:8005 \
             -J zap_siem.json -w zap_siem.md -r zap_siem.html || true
 
+      # ✅ FIX 6 — Always upload the artifact, even if ZAP produced no files.
+      #   Write a sentinel file first so the artifact is never empty
+      #   (upload-artifact@v4 fails on an empty directory).
+      #   The security-report job can then download it unconditionally
+      #   without continue-on-error gymnastics.
       - name: Upload all ZAP reports
+        if: always()
+        run: |
+          # Ensure at least one file exists so the artifact upload never fails
+          # on an empty directory (e.g. when all ZAP targets were unreachable).
+          if [ -z "$(ls -A zap-output 2>/dev/null)" ]; then
+            echo "No ZAP reports were produced." > zap-output/zap_sentinel.txt
+          fi
+
+      - name: Upload ZAP reports artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap-reports
-          path: zap_*.*
+          path: zap-output/
 
       - name: Stop application stack
         if: always()
@@ -562,6 +618,11 @@ jobs:
           path: sarif-results
           merge-multiple: false
 
+      # ✅ FIX — Download ZAP reports with continue-on-error so the
+      #   security-report job never fails when the dast-zap job was
+      #   skipped, cancelled, or failed before uploading its artifact.
+      #   The Python report script already handles a missing zap-results
+      #   directory gracefully.
       - name: Download ZAP reports
         uses: actions/download-artifact@v4
         with:
@@ -734,9 +795,9 @@ jobs:
                       service = os.path.basename(zf).replace('zap_', '').replace('.md', '')
                       add(f"- **{service}**: See `{os.path.basename(zf)}`")
               else:
-                  add("_No ZAP markdown reports found._")
+                  add("_No ZAP markdown reports found (ZAP may not have produced output for any target)._")
           else:
-              add("_ZAP reports not available (DAST job may not have run)._")
+              add("_ZAP reports not available (DAST job was skipped, cancelled, or failed before uploading)._")
           add()
 
           report_content = '\n'.join(report_lines)

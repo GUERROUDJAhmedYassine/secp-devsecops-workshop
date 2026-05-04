@@ -48,7 +48,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 2 — SAST: Bandit (Python services)
-  # Analyses source code without executing it.
   # ─────────────────────────────────────────────
   sast-bandit:
     name: "SAST · Bandit (Python)"
@@ -73,8 +72,6 @@ jobs:
                     ./services/siem \
                  -f sarif -o bandit-results.sarif \
                  --exit-zero
-        # --exit-zero prevents the step from failing the pipeline;
-        # findings are still uploaded and visible in the Security tab.
 
       - name: Upload Bandit SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -92,7 +89,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 2 — SAST: Semgrep (JS/TS + multi-lang)
-  # Multi-language SAST with OWASP Top 10 rules.
   # ─────────────────────────────────────────────
   sast-semgrep:
     name: "SAST · Semgrep (Multi-language)"
@@ -135,7 +131,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 3 — SCA: OWASP Dependency-Check
-  # Identifies known CVEs in third-party deps.
   # ─────────────────────────────────────────────
   sca-dependency-check:
     name: "SCA · OWASP Dependency-Check"
@@ -154,7 +149,7 @@ jobs:
             --enableRetired
             --failOnCVSS 7
             --suppression suppression.xml
-        continue-on-error: true   # Don't block pipeline; review findings manually
+        continue-on-error: true
 
       - name: Upload Dependency-Check SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -172,7 +167,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 3 — SCA: Trivy (filesystem scan)
-  # Fast, accurate SCA across all ecosystems.
   # ─────────────────────────────────────────────
   sca-trivy-fs:
     name: "SCA · Trivy (filesystem)"
@@ -206,7 +200,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 4 — Secrets Detection: Gitleaks
-  # Scans git history + staged changes.
   # ─────────────────────────────────────────────
   secrets-gitleaks:
     name: "Secrets · Gitleaks"
@@ -214,7 +207,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # Full git history required for Gitleaks
+          fetch-depth: 0
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -225,7 +218,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 4 — Secrets Detection: TruffleHog
-  # Entropy + pattern scanning in commits.
   # ─────────────────────────────────────────────
   secrets-trufflehog:
     name: "Secrets · TruffleHog"
@@ -244,7 +236,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 7 — IaC Scanning: Checkov
-  # Scans Dockerfiles, docker-compose, k8s, etc.
   # ─────────────────────────────────────────────
   iac-checkov:
     name: "IaC · Checkov (Dockerfile + Compose)"
@@ -277,7 +268,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 7 — Dockerfile Linting: Hadolint
-  # Best-practice linting for Dockerfiles.
   # ─────────────────────────────────────────────
   iac-hadolint:
     name: "IaC · Hadolint (Dockerfile linter)"
@@ -318,8 +308,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 5 — Container Image Scanning: Trivy
-  # Scans OS packages + app dependencies in images.
-  # Runs AFTER source-level scans pass.
   # ─────────────────────────────────────────────
   container-trivy:
     name: "Container · Trivy (${{ matrix.service }})"
@@ -377,13 +365,14 @@ jobs:
           name: sarif-trivy-image-${{ matrix.service }}
           path: trivy-${{ matrix.service }}.sarif
 
-
-
   # ─────────────────────────────────────────────
   # STEP 6 — DAST: OWASP ZAP Baseline Scan
-  # Interacts with a RUNNING application to find
-  # SQL injection, XSS, auth weaknesses, etc.
-  # Runs LAST — after all static scans.
+  #
+  # FIXES APPLIED HERE:
+  #   1. .env now loaded from GitHub Secrets
+  #   2. WireGuard skipped (no kernel modules in CI)
+  #   3. sleep 60 replaced with proper wait loop
+  #   4. Logs dumped automatically on failure
   # ─────────────────────────────────────────────
   dast-zap:
     name: "DAST · OWASP ZAP Baseline"
@@ -393,36 +382,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ✅ FIX 1 — .env from GitHub Secrets (not hardcoded dummy values)
+      # Required secrets to add in GitHub repo Settings → Secrets:
+      #   DB_PASS, JWT_SECRET, WG_SERVER_PUBLIC_KEY,
+      #   WG_SERVER_ENDPOINT, VITE_ADMIN_GATEWAY_PATH
       - name: Create .env for CI
         run: |
           cat > .env <<EOF
-          DB_PASS=ci_dummy_pass_4testing
-          JWT_SECRET=ci_dummy_jwt_secret_32chars_long!
-          WG_SERVER_PUBLIC_KEY=dummykey
-          WG_SERVER_ENDPOINT=127.0.0.1
-          VITE_ADMIN_GATEWAY_PATH=/
+          DB_PASS=${{ secrets.DB_PASS }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          WG_SERVER_PUBLIC_KEY=${{ secrets.WG_SERVER_PUBLIC_KEY }}
+          WG_SERVER_ENDPOINT=${{ secrets.WG_SERVER_ENDPOINT }}
+          VITE_ADMIN_GATEWAY_PATH=${{ secrets.VITE_ADMIN_GATEWAY_PATH }}
           EOF
 
+      # ✅ FIX 2 — Skip WireGuard (requires kernel modules unavailable in CI)
+      # --scale wireguard=0 starts all services EXCEPT wireguard
       - name: Start application stack
         run: |
-          docker compose -f docker-compose-dev.yml up -d --build
-          echo "Waiting for services to be ready..."
-          sleep 60
+          docker compose -f docker-compose-dev.yml up -d --build \
+            --scale wireguard=0
+          echo "Stack started — waiting for services to become healthy..."
 
-      - name: Health-check all services
+      # ✅ FIX 3 — Proper wait loop instead of sleep 60
+      # Polls each service every 5s for up to 150s (30 attempts)
+      # Dumps all container logs and exits with error if any service fails
+      - name: Wait for all services to be healthy
         run: |
-          echo "--- Frontend ---"
-          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:3000 > /dev/null && echo "OK" || echo "FAIL"
-          echo "--- Auth API (8001) ---"
-          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8001/health > /dev/null && echo "OK" || echo "FAIL"
-          echo "--- Mail API (8002) ---"
-          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8002/health > /dev/null && echo "OK" || echo "FAIL"
-          echo "--- Messaging API (8003) ---"
-          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8003/health > /dev/null && echo "OK" || echo "FAIL"
-          echo "--- Files API (8004) ---"
-          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8004/health > /dev/null && echo "OK" || echo "FAIL"
-          echo "--- SIEM API (8005) ---"
-          curl --retry 12 --retry-delay 5 --retry-connrefused -sf http://localhost:8005/health > /dev/null && echo "OK" || echo "FAIL"
+          SERVICES=(
+            "localhost:8001/health"
+            "localhost:8002/health"
+            "localhost:8003/health"
+            "localhost:8004/health"
+            "localhost:8005/health"
+            "localhost:3000"
+          )
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "⏳ Waiting for http://$SERVICE ..."
+            for i in $(seq 1 30); do
+              if curl -sf "http://$SERVICE" > /dev/null 2>&1; then
+                echo "✅ $SERVICE is up"
+                break
+              fi
+              echo "   attempt $i/30 — retrying in 5s..."
+              sleep 5
+              if [ "$i" -eq 30 ]; then
+                echo "❌ $SERVICE never became healthy — dumping logs"
+                docker compose -f docker-compose-dev.yml logs --tail=100
+                exit 1
+              fi
+            done
+          done
+          echo "🟢 All services are healthy — starting ZAP scans"
+
+      # ✅ FIX 4 — Dump logs automatically on any failure
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose-dev.yml logs --tail=200
 
       - name: OWASP ZAP — Frontend (port 3000)
         run: |
@@ -479,8 +495,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # SBOM Generation: Syft (CycloneDX / SPDX)
-  # Generates Software Bill of Materials for
-  # all service images.
   # ─────────────────────────────────────────────
   sbom-syft:
     name: "SBOM · Syft (${{ matrix.service }})"
@@ -523,8 +537,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 10 — Security Findings Report (D4)
-  # Downloads all SARIF artifacts, parses them,
-  # and generates a Markdown findings table.
   # ─────────────────────────────────────────────
   security-report:
     name: "📊 Security Findings Report"
@@ -580,7 +592,6 @@ jobs:
           add("---")
           add()
 
-          # Pipeline status
           add("## 1. Pipeline Execution Summary")
           add()
           add("| Stage | Tool | Status |")
@@ -600,7 +611,6 @@ jobs:
                   add(f"| {stage} | {tool_name} | {icon} {result} |")
           add()
 
-          # Parse SARIF files
           def parse_sarif(filepath):
               findings = []
               try:
@@ -613,7 +623,6 @@ jobs:
                           rule_id = result.get('ruleId', 'N/A')
                           level = result.get('level', 'warning')
                           message = result.get('message', {}).get('text', 'No description')
-                          # Truncate long messages
                           if len(message) > 120:
                               message = message[:117] + '...'
                           location = 'N/A'
@@ -647,7 +656,6 @@ jobs:
                   print(f"Warning: Could not parse {filepath}: {e}")
               return findings
 
-          # Collect all SARIF findings
           all_findings = {}
           categories = {
               'bandit': 'SAST (Bandit)',
@@ -662,7 +670,6 @@ jobs:
           sarif_dir = 'sarif-results'
           if os.path.exists(sarif_dir):
               for sarif_file in sorted(glob.glob(os.path.join(sarif_dir, '**', '*.sarif'), recursive=True)):
-                  # Determine category from path
                   rel_path = os.path.relpath(sarif_file, sarif_dir)
                   cat_key = 'unknown'
                   for key in categories:
@@ -675,7 +682,6 @@ jobs:
                       all_findings[cat_name] = []
                   all_findings[cat_name].extend(findings)
 
-          # Summary statistics
           add("## 2. Findings Overview")
           add()
           total = sum(len(f) for f in all_findings.values())
@@ -691,7 +697,6 @@ jobs:
               add(f"| {cat_name} | {len(findings)} | {high} | {med} | {low} |")
           add()
 
-          # Detailed tables per category
           add("---")
           add()
           add("## 3. Detailed Findings by Category")
@@ -709,8 +714,7 @@ jobs:
                   add()
                   add("| # | Severity | Rule ID | File | Line | Description |")
                   add("|---|----------|---------|------|------|-------------|")
-                  for i, f in enumerate(findings[:50], 1):  # Cap at 50 per category
-                      # Escape pipe chars in message
+                  for i, f in enumerate(findings[:50], 1):
                       msg = f['message'].replace('|', '\\|')
                       add(f"| {i} | {f['severity']} | {f['rule']} | {f['file']} | {f['line']} | {msg} |")
                   if len(findings) > 50:
@@ -718,7 +722,6 @@ jobs:
               add()
               section_num += 1
 
-          # DAST section from ZAP markdown reports
           add(f"### 3.{section_num} DAST (OWASP ZAP)")
           add()
           zap_dir = 'zap-results'
@@ -736,7 +739,6 @@ jobs:
               add("_ZAP reports not available (DAST job may not have run)._")
           add()
 
-          # Write report
           report_content = '\n'.join(report_lines)
           with open('security-findings-report.md', 'w', encoding='utf-8') as f:
               f.write(report_content)
@@ -775,7 +777,6 @@ jobs:
 
   # ─────────────────────────────────────────────
   # STEP 9 — CD: Push to GitHub Container Registry
-  # Only runs on main branch after all scans pass.
   # ─────────────────────────────────────────────
   deploy-ghcr:
     name: "🚀 CD · Push to GHCR"
